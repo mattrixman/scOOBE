@@ -1,5 +1,5 @@
 import unittest
-import scOOBE.Button as Button
+from scoobe import Button
 
 class Bar(unittest.TestCase):
 
