@@ -1,9 +1,14 @@
 import unittest
 import re
 import sh
-from scoobe import Device
+import scoobe
+from scoobe import get_connected_device
 
-#import IPython
+import IPython
+def undebug():
+    def noop():
+        pass
+    IPython.embed = noop
 
 class DeviceTest(unittest.TestCase):
 
@@ -14,10 +19,8 @@ class DeviceTest(unittest.TestCase):
         self.assertTrue(any(re.match('^C.*device$', line) for line in sh.adb('devices').split('\n')))
 
     def test_get_serial(self):
-        self.assertTrue(re.match('^C[A-Z0-9]{3}[UE][CQNOPRD]\d{8}$', Device().serial))
+        self.assertTrue(re.match('^C[A-Z0-9]{3}[UE][CQNOPRD]\d{8}$', get_connected_device().serial))
 
     def test_clover_device_attached(self):
-        self.assertTrue(Device().type in Device.prefix2device.values())
-
-    def test_Device_class_referencable(self):
-        self.assertTrue('GOLDLEAF' in Device.prefix2device.values())
+        self.assertTrue(get_connected_device().codename in scoobe.device.codename2class.keys())
+        self.assertTrue(get_connected_device().codename in scoobe.device.prefix2codename.values())

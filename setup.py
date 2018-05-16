@@ -9,6 +9,7 @@ setup(name='scoobe',
       python_requires= '>=3',
       install_requires=['uiautomator', 'sh'],
       entry_points={'console_scripts' : ['press_button = scoobe.button:press',
-                                         'device_info = scoobe.device:info'] }
+                                         'device_info = scoobe.device:info',
+                                         'wait_ready = scoobe.device:wait_ready'] }
       )
 
