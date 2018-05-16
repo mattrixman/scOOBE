@@ -2,13 +2,16 @@ import re
 import itertools
 import sys
 import sh
+import json
+from argparse import ArgumentParser
+from enum import Enum
 from sh import adb
 from sh import sed
 from sh import egrep
 from time import sleep
 
 def info():
-    print(get_connected_device().get_info())
+    print(json.dumps(get_connected_device().get_info()))
 
 def ready():
     try:
@@ -31,6 +34,22 @@ def wait_ready():
             sys.stdout.flush()
         sleep(1)
         print(' ... ready')
+
+class CloudTarget(Enum):
+    prod_us = 'prod_us'
+    prod_eu = 'prod_eu'
+    dev = 'dev'
+    local = 'local'
+
+    def __str__(self):
+        return self.value
+
+def set_target():
+    parser = ArgumentParser()
+    parser.add_argument("target", type=CloudTarget, choices=list(CloudTarget))
+    parser.add_argument("url", type=str)
+    args=parser.parse_args()
+    get_connected_device().set_target(args.target, args.url)
 
 def get_connected_device():
     wait_ready()
@@ -62,23 +81,23 @@ class Device:
         return 8
 
     def get_info(self):
-        target = ':'.join(self.get_target()) # name:host
+        target = ':'.join(self.get_target()) # target:url
         return {"marketing_name":self.__class__.__name__,
                 "code_name":self.codename,
                 "serial":self.serial,
                 "cpuid":self.cpuid,
                 "targeting":target}
 
-    def set_target(self, name, host):
+    def set_target(self, target, url):
         self.wait_ready()
 
-        if re.match('http://.*', host):
-            host = host[7:]
+        if re.match('http://.*', url):
+            url = url[7:]
 
-        print("targeting device to: " + host)
+        print("targeting device to: " + url)
 
         cmd = ['su', '1000', 'content', 'call', '--uri', 'content://com.clover.service.provider',
-            '--method', 'changeTarget', '--extra', 'target:s:{}:{}'.format(name, host)]
+            '--method', 'changeTarget', '--extra', 'target:s:{}:{}'.format(target, url)]
 
         # print(' '.join(cmd))
         adb.shell(cmd)
@@ -97,11 +116,11 @@ class Mini(Device) :
 
     def get_target(self):
         self.wait_ready()
-        name_host = str(sed(adb.shell('mmc_access', 'r_yj3_target'), '-n',
+        target_url = str(sed(adb.shell('mmc_access', 'r_yj3_target'), '-n',
                 r's/^.*YJ3[^:]*: \([^:]*\):\(.*\).*$/\1,\2/p')).strip()
-        assert(len(name_host) > 0)
-        (name, host) = name_host.split(',')
-        return (name, host)
+        assert(len(target_url) > 0)
+        (target, url) = target_url.split(',')
+        return (target, url)
 
 class Flex(Device):
 
@@ -110,11 +129,11 @@ class Flex(Device):
 
     def get_target(self):
         self.wait_ready()
-        name = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
+        target = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
         url = str(adb.shell('cat', '/pip/CLOVER_CLOUD_URL'))
         if re.match('http://.*', url):
             url = url[7:]
-        return (name, url)
+        return (target, url)
 
 class Mobile(Device):
     pass
