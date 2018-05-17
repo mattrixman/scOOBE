@@ -1,4 +1,17 @@
-# Scripted Control of OOBE
+# SCOOBE SNACS
+
+*S*cripted
+*C*ontrol of the
+*O*ut
+*O*f
+*B*ox
+*E*xperience
+
+*S*ometimes
+*N*eeds
+*A*dditional
+*C*ontrol
+*S*emantics
 
 This is a collection of small scripts.  Each completes a small OOBE-related task.  The idea is that these would be called by a more comprehensive test automation solution.
 
