@@ -19,3 +19,4 @@ class MiniTest(unittest.TestCase):
             test_get_set_target(d, self)
         else:
             print("Skipped because connected device is not a Mini")
+        d.wait_ready()

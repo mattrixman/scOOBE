@@ -1,0 +1,4 @@
+    from sh import cat, sed, grep, awk
+    from os.path import expanduser, join, exists
+    ssh_config = join(expanduser('~'),'.ssh','config')
+    port = str(awk(grep(sed(cat(ssh_config), '-n', '/Host dev1$/,/Host /p'), '3306'), '{print $2}'))
