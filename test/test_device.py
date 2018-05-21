@@ -18,8 +18,6 @@ class DeviceTest(unittest.TestCase):
     def test_adb_available(self):
         self.assertTrue(sh.which("adb") != None)
 
-    def test_get_serial(self):
-
     def test_clover_device_attached(self):
         self.assertTrue(get_connected_device().codename in scoobe.device.codename2class.keys())
         self.assertTrue(get_connected_device().codename in scoobe.device.prefix2codename.values())

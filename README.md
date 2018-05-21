@@ -86,3 +86,13 @@ Unit tests pass for Flex and Mini, other devices coming soon.
 |device_info| print the serial number, cpuid, cloud target url, and model info as a JSON string |
 |set_target target url| retarget the device (causes a reboot) |
 |wait_ready | block until the device finishes rebooting |
+|get_serial | print just the serial number |
+|get_merchant | given a serial number and a remote server, get the merchant that the device is provisioned to |
+
+### Examples
+
+    $ get_merchant $(get_serial) dev1
+        connecting to dev1...done
+        QHTZFDD81MMP1
+        disconnecting from dev1.done
+

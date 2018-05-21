@@ -13,6 +13,9 @@ from time import sleep
 def info():
     print(json.dumps(get_connected_device().get_info()))
 
+def get_serial():
+    print(get_connected_device().get_info()['serial'])
+
 def ready():
     try:
         if str(adb.shell(['getprop', 'sys.boot_completed'])).strip() == '1':

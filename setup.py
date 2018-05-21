@@ -11,6 +11,8 @@ setup(name='scoobe',
       entry_points={'console_scripts' : ['press_button = scoobe.button:press',
                                          'device_info = scoobe.device:info',
                                          'wait_ready = scoobe.device:wait_ready',
-                                         'set_target = scoobe.device:set_target'] }
+                                         'set_target = scoobe.device:set_target',
+                                         'get_serial = scoobe.device:get_serial',
+                                         'get_merchant = scoobe.server:get_merchant'] }
       )
 
