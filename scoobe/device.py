@@ -16,6 +16,9 @@ def info():
 def get_serial():
     print(get_connected_device().get_info()['serial'])
 
+def get_cpuid():
+    print(get_connected_device().get_info()['cpuid'])
+
 def ready():
     try:
         if str(adb.shell(['getprop', 'sys.boot_completed'])).strip() == '1':

@@ -7,12 +7,19 @@ setup(name='scoobe',
       author_email='matt.rixman@clover.com',
       packages=['scoobe'],
       python_requires= '>=3',
-      install_requires=['uiautomator', 'sh', 'mysqlclient'],
+      install_requires=['uiautomator', 'sh', 'mysqlclient', 'sshconf', 'requests'],
       entry_points={'console_scripts' : ['press_button = scoobe.button:press',
                                          'device_info = scoobe.device:info',
                                          'wait_ready = scoobe.device:wait_ready',
-                                         'set_target = scoobe.device:set_target',
-                                         'get_serial = scoobe.device:get_serial',
-                                         'get_merchant = scoobe.server:get_merchant'] }
+                                         'target_device = scoobe.device:set_target',
+                                         'device_serial = scoobe.device:get_serial',
+                                         'device_cpuid = scoobe.device:get_cpuid',
+                                         'device_merchant = scoobe.server:print_merchant',
+                                         'get_mid = scoobe.server:print_mid',
+                                         'deprovision_device = scoobe.server:deprovision',
+                                         'provision_device = scoobe.server:provision',
+                                         'unaccept_terms= scoobe.server:unaccept',
+                                         'accept_terms= scoobe.server:accept',
+                                         'activation_code = scoobe.server:print_activation_code'] }
       )
 
