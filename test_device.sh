@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$DIR"
 
 if python --version | grep '3\.' > /dev/null ; then
-    python -m unittest -v test.test_device.Device
+    python -m unittest -v test.test_device.DeviceTest
 else
     echo "Please use python 3"
     echo "(consider using a virtual environment:"
