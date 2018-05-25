@@ -13,7 +13,7 @@ setup(name='scoobe',
           # press the button with the given text
           'press_button = scoobe.ui:press',
 
-          # press the button with the given text
+          # wait for the given text to appear on the screen
           'wait_text = scoobe.ui:wait_text',
 
           # reset device, clear storage
