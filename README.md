@@ -30,29 +30,52 @@ This is a collection of commands.  Each completes a small OOBE-related task.  Th
 
 ### Prerequisites
 
+##### python 3.3 or greater should be installed
 
-- adb should work, like so:
+To check:
 
-     ❯ adb devices
-         List of devices attached
-         C030UQ72330608  device
+    python3 --version
 
-- ssh should authenticate without prompting for a password, like so:
+To install:
 
-      ❯ ssh dev1
-          ... output omitted...
-          [<your user>@dev1.dev ~]$
+    brew install python3
 
-- While the above ssh session is active, there should be a local port which is forwarded to the mysql port on the target machine.
+##### mysql_config is available
+
+To check:
+
+    which mysql_config
+
+To install:
+
+    brew install mysql
+
+
+##### adb should work
+
+Like so:
+
+    ❯ adb devices
+        List of devices attached
+        C030UQ72330608  device
+
+##### ssh authenticates via keys (no password prompt)
+
+Like so:
+
+    ❯ ssh dev1
+        ... output omitted, no input needed ...
+    [<your user>@dev1.dev ~]$
 
 Fore more about how to configure this, see: [this confluence page](https://confluence.dev.clover.com/pages/viewpage.action?pageId=20711161)
 
+##### Port Forwarding
+
+While the above ssh session is active, there should be a local port which is forwarded to the mysql port on the target machine, this is covered in the above article as well.
+
 ### The First Time
 
-    # get python3 and (recommended) venv
-    ❯ apt update && apt install -y git python3-venv
-
-    # get the repo
+    # get the repo and enter its root
     ❯  git clone https://github.com/mattrixman/scOOBE && cd scOOBE
 
     # create a virtual environment (this makes a folder)
