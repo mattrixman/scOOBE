@@ -82,7 +82,7 @@ While the above ssh session is active, there should be a local port which is for
     ❯ python3 -m venv .venv
 
     # enter it (by sourcing the script in the newly created folder)
-    .venv ❯ source .venv/bin/activate
+    ❯ source .venv/bin/activate
 
     # get the latest version of the package manager
     .venv ❯ pip installl --upgrade pip
