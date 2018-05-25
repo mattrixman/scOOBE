@@ -24,7 +24,7 @@
 
 **S**emantics
 
-This is a collection of commands.  Each completes a small OOBE-related task.  The idea is that these would be useful both when called by a more comprehensive test automation solution (i.e. intellij) and also when typed by a human into a (bash or python) shell.
+This is a collection of commands.  Each completes a small OOBE-related task.  The idea is that these would be useful both when called by a more comprehensive test automation solution (i.e. intellij) and also when typed by a human into a (bash or python) shell.  It is useful in its present state, but it is not complete.
 
 ## To use
 
@@ -33,29 +33,19 @@ This is a collection of commands.  Each completes a small OOBE-related task.  Th
 
 - adb should work, like so:
 
-    ❯ adb devices
-        List of devices attached
-        C030UQ72330608  device
+     ❯ adb devices
+         List of devices attached
+         C030UQ72330608  device
 
 - ssh should authenticate without prompting for a password, like so:
 
-     ❯ ssh dev1
-        * * * * * * * * * * * * W A R N I N G * * * * * * * * * * * * *
-        THIS SYSTEM IS RESTRICTED TO AUTHORIZED USERS FOR AUTHORIZED USE
-        ONLY. UNAUTHORIZED ACCESS IS STRICTLY PROHIBITED AND MAY BE
-        PUNISHABLE UNDER THE COMPUTER FRAUD AND ABUSE ACT OF 1986 OR
-        OTHER APPLICABLE LAWS. IF NOT AUTHORIZED TO ACCESS THIS SYSTEM,
-        DISCONNECT NOW.  BY CONTINUING, YOU CONSENT TO YOUR KEYSTROKES
-        AND DATA CONTENT BEING MONITORED.  ALL PERSONS ARE HEREBY
-        NOTIFIED THAT THE USE OF THIS SYSTEM CONSTITUTES CONSENT TO
-        MONITORING AND AUDITING.
-        * * * * * * * * * * * * W A R N I N G * * * * * * * * * * * * *
-        Last login: Thu May 24 21:24:21 2018 from <your ip>)
-        [<your user>@dev1.dev ~]$
+      ❯ ssh dev1
+          ... output omitted...
+          [<your user>@dev1.dev ~]$
 
 - While the above ssh session is active, there should be a local port which is forwarded to the mysql port on the target machine.
 
-Fre more about how to configure this, see: [this confluence page](https://confluence.dev.clover.com/pages/viewpage.action?pageId=20711161)
+Fore more about how to configure this, see: [this confluence page](https://confluence.dev.clover.com/pages/viewpage.action?pageId=20711161)
 
 ### The First Time
 
@@ -97,10 +87,19 @@ Fre more about how to configure this, see: [this confluence page](https://conflu
     .venv ❯ device_info | jq .targeting
         "local:10.249.253.118"
 
+    # exit the venv
+    .venv ❯ deactivate
+
+## Example Session
+
+##### Set the device target to dev1
+
     .venv ❯ target_device dev dev1.dev.clover.com && wait_ready && device_info | jq .targeting
         targeting device to: dev1.dev.clover.com
         waiting for device  ... ready
         "dev:dev1.dev.clover.com"
+
+##### See which merchant is associated with this device
 
     .venv ❯ device_merchant $(device_serial) dev1
         Finding C030UQ72330608's merchant according to dev1
@@ -115,6 +114,7 @@ Fre more about how to configure this, see: [this confluence page](https://conflu
             [Disconnecting from dev1.]
         this device is not associated with a merchant on dev1
 
+##### Set the merchant for this device
 
     .venv ❯ provision_device $(device_serial) $(device_cpuid) dev1 TCF09QDYHEDQ8
         Provisioning Device
@@ -160,14 +160,37 @@ Fre more about how to configure this, see: [this confluence page](https://conflu
             [Disconnecting from dev1.]
         {"id": "3085", "uuid": "TCF09QDYHEDQ8"}
 
-    # exit the venv
-    .venv ❯ deactivate
-
 ## Supported Devices
 
 Unit tests pass for Flex and Mini, other devices coming soon.
 
 ## scoobe snacs
 
-See [setup.py](setup.py) for a list of commands.
+See [setup.py](setup.py) for a list of commands.  Each supports interactive help, like so:
+
+    .venv ❯ provision_device -h
+        usage: provision_device [-h] serial_num cpuid ssh_config_host merchant
+
+        positional arguments:
+          serial_num       the device serial number
+          cpuid            the device cpu id
+          ssh_config_host  ssh alias, appears: 'Host: <here>' in ~/.ssh/config
+          merchant         UUID of merchant that will be using this device
+
+## With an IDE
+
+To use scoobe snacs from an IDE, enter the virtual environment and launce your IDE from there:
+
+    ❯ source .venv/bin/activate
+    .venv ❯ idea /path/to/project
+
+From there, you can invoke a snac like you would any other command.
+
+![screenshot of IDE session](ide.png)
+
+Notice that the status messages are written to STERR, but the requested data is written to STDOUT.  This makes it easy to get what you asked for, while still knowing what went down--which is probably important since it's your user thats doing these things.
+
+## Feedback
+
+Feel free to submit bugs and feature requests as issues.  PR's happily accepted too.
 

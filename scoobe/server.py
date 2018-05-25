@@ -12,8 +12,8 @@ from scoobe.mysql_common import Query
 SerialSsh = namedtuple('SerialSsh', 'serial_num ssh_config')
 def parse_serial_ssh():
     parser = ArgumentParser()
-    parser.add_argument("serial_num", type=str)
-    parser.add_argument("ssh_config_host", type=str, help="ssh config entry name")
+    parser.add_argument("serial_num", type=str, help="the device serial number")
+    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
     args = parser.parse_args()
 
     if not re.match(r'C[A-Za-z0-9]{3}[UE][CQNOPRD][0-9]{8}', args.serial_num):
@@ -56,13 +56,10 @@ def print_merchant():
         printer(str(ex))
         sys.exit(30)
 
-
-
-
 def print_activation_code():
+    args = parse_serial_ssh()
     printer = StatusPrinter(indent=0)
     printer("Getting Activation Code")
-    args = parse_serial_ssh()
     with Indent(printer):
         print(get_activation_code(args.ssh_config, args.serial_num, printer=printer))
 
@@ -78,7 +75,7 @@ def get_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
     return int(q.get_from_first_row(lambda row: row['activation_code'].decode('utf-8'),
                                     printer=printer))
 
-def get_acceptedness(ssh_config, serial_num):
+def get_acceptedness(ssh_config, serial_num, printer=StatusPrinter()):
     q = Query(ssh_config, 'metaRO', 'test321',
             """
             SELECT value
@@ -90,13 +87,21 @@ def get_acceptedness(ssh_config, serial_num):
                 AND
                     name = 'ACCEPTED_BILLING_TERMS';
              """.format(serial_num))
-    value = q.get_from_first_row(lambda row: row['value'])
+
+    q.on_empty("this device is not associated with a merchant on {}".format(ssh_config.ssh_host))
+
+    try:
+        value = q.get_from_first_row(lambda row: row['value'])
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(40)
+
     if value is None:
         return None
     else:
         return value.decode('utf-8')
 
-def set_acceptedness(ssh_config, serial_num, value):
+def set_acceptedness(ssh_config, serial_num, value, printer=StatusPrinter()):
     q = Query(ssh_config, 'metaRW', 'test789',
             """
             UPDATE setting SET value = {}
@@ -111,18 +116,23 @@ def set_acceptedness(ssh_config, serial_num, value):
 
 def unaccept():
     args = parse_serial_ssh()
-    print("Clearing Terms Acceptance", file=sys.stderr)
-    set_acceptedness(args.ssh_config, args.serial_num, "NULL")
+    printer = StatusPrinter(indent=0)
+    printer("Clearing Terms Acceptance")
 
-    new_val = get_acceptedness(args.ssh_config, args.serial_num)
+    set_acceptedness(args.ssh_config, args.serial_num, "NULL", printer)
+
+    new_val = get_acceptedness(args.ssh_config, args.serial_num, printer)
+
     if new_val is None:
-        print("OK", file=sys.stderr)
+        printer("OK")
     else:
         raise ValueError("Failed to set acceptedness to {}.  Final value: {}".format("NULL", new_val))
 
 def accept():
     args = parse_serial_ssh()
-    print("Clearing Terms Acceptance", file=sys.stderr)
+    printer = StatusPrinter()
+    printer("Accepting Terms")
+
     set_acceptedness(args.ssh_config, args.serial_num, "1")
 
     new_val = get_acceptedness(args.ssh_config, args.serial_num)
@@ -168,7 +178,8 @@ def get_mid(ssh_config, uuid):
 # print the mid of the merchant with the specified uuid
 def print_merchant_id():
     parser = ArgumentParser()
-    parser.add_argument("ssh_config_host", type=str, help="ssh config entry name")
+    parser.add_argument("serial_num", type=str, help="the device serial number")
+    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
     parser.add_argument("merchant_uuid", type=str,
             help="the merchant uuid that we want a merchant id for")
     args = parser.parse_args()
@@ -219,9 +230,9 @@ def deprovision():
 ProvisionArgs = namedtuple('ProvisionArgs', 'serial_num cpuid ssh_config merchant')
 def parse_serial_ssh_merch():
     parser = ArgumentParser()
-    parser.add_argument("serial_num", type=str)
-    parser.add_argument("cpuid", type=str)
-    parser.add_argument("ssh_config_host", type=str, help="ssh config entry name")
+    parser.add_argument("serial_num", type=str, help="the device serial number")
+    parser.add_argument("cpuid", type=str, help="the device cpu id")
+    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
     parser.add_argument("merchant", type=str,
             help="UUID of merchant that will be using this device")
     args = parser.parse_args()
@@ -241,11 +252,12 @@ def parse_serial_ssh_merch():
 
 # provision device for merchant
 def provision():
+    args = parse_serial_ssh_merch()
+
     printer = StatusPrinter(indent=0)
     printer("Provisioning Device")
 
     with Indent(printer):
-        args = parse_serial_ssh_merch()
 
         endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.ssh_config.hostname,

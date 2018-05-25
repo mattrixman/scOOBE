@@ -23,7 +23,6 @@ def ready():
     try:
         if str(adb.shell(['getprop', 'sys.boot_completed'])).strip() == '1':
             return True
-        else:
             return False
     except sh.ErrorReturnCode:
         return False
