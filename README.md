@@ -201,7 +201,7 @@ See [setup.py](setup.py) for a list of commands.  Each supports interactive help
 
 ## With an IDE
 
-To use scoobe snacs from an IDE, enter the virtual environment and launce your IDE from there:
+To use scoobe snacs from an IDE, enter the virtual environment and launch your IDE from there:
 
     ❯ source .venv/bin/activate
     .venv ❯ idea /path/to/project
