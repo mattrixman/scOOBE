@@ -2,11 +2,11 @@ import unittest
 from scoobe.device import get_connected_device
 from test.device_common import test_get_set_target
 
-import IPython
-def undebug():
-    def noop():
-        pass
-    IPython.embed = noop
+#import IPython
+#def undebug():
+#    def noop():
+#        pass
+#    IPython.embed = noop
 
 class MiniTest(unittest.TestCase):
 
