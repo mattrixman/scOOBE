@@ -186,7 +186,7 @@ While the above ssh session is active, there should be a local port which is for
 
 Unit tests pass for Flex and Mini, other devices coming soon.
 
-## scoobe snacs
+## snac List
 
 See [setup.py](setup.py) for a list of commands.  Each supports interactive help, like so:
 
@@ -210,7 +210,7 @@ From there, you can invoke a snac like you would any other command.
 
 ![screenshot of IDE session](ide.png)
 
-Notice that the status messages are written to STERR, but the requested data is written to STDOUT.  This makes it easy to get what you asked for, while still knowing what went down--which is probably important since it's your user thats doing these things.
+Notice that the status messages are written to STERR, but the requested data is written to STDOUT.  This makes it easy to get what you asked for, while still knowing what went down.
 
 ## Feedback
 
