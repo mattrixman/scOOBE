@@ -11,42 +11,48 @@ setup(name='scoobe',
       entry_points={'console_scripts' : [
 
           # press the button with the given text
-          'press_button = scoobe.button:press',
+          'press_button = scoobe.ui:press',
 
-           # print a json dictionary of stuff about the device
-           'device_info = scoobe.device:info',
+          # press the button with the given text
+          'wait_text = scoobe.ui:wait_text',
 
-           # if the device is rebooting, wait for it to be ready for further commands
-           'wait_ready = scoobe.device:wait_ready',
+          # reset device, clear storage
+          'master_clear = scoobe.device:master_clear',
 
-           # given a device serial number, point it at a server (whose details are specified in ~/.ssh/config)
-           'target_device = scoobe.device:set_target',
+          # print a json dictionary of stuff about the device
+          'device_info = scoobe.device:info',
 
-           # print the device's serial number
-           'device_serial = scoobe.device:get_serial',
+          # if the device is rebooting, wait for it to be ready for further commands
+          'wait_ready = scoobe.device:wait_ready',
 
-           # print the device's cpu id
-           'device_cpuid = scoobe.device:get_cpuid',
+          # given a device serial number, point it at a server (whose details are specified in ~/.ssh/config)
+          'target_device = scoobe.device:set_target',
 
-           # given a serial number and a server, see which merchant the server thinks the device goes with
-           'device_merchant = scoobe.server:print_merchant',
+          # print the device's serial number
+          'device_serial = scoobe.device:get_serial',
 
-           # given a merchant uuid, print the merchant id that goes with it
-           'get_merchant_id = scoobe.server:print_merchant_id',
+          # print the device's cpu id
+          'device_cpuid = scoobe.device:get_cpuid',
 
-           # detach the specified device from whichever merchant it is currently associated with
-           'deprovision_device = scoobe.server:deprovision',
+          # given a serial number and a server, see which merchant the server thinks the device goes with
+          'device_merchant = scoobe.server:print_merchant',
 
-           # attach the specified device to the specified merchant
-           'provision_device = scoobe.server:provision',
+          # given a merchant uuid, print the merchant id that goes with it
+          'get_merchant_id = scoobe.server:print_merchant_id',
 
-           # clear the ACCEPTED_BILLING_TERMS flag
-           'unaccept_terms= scoobe.server:unaccept',
+          # detach the specified device from whichever merchant it is currently associated with
+          'deprovision_device = scoobe.server:deprovision',
 
-           # set the ACCEPTED_BILLING_TERMS flag
-           'accept_terms= scoobe.server:accept',
+          # attach the specified device to the specified merchant
+          'provision_device = scoobe.server:provision',
 
-           # get the activation code for a device (won't work if not provisioned)
-           'activation_code = scoobe.server:print_activation_code'] }
+          # clear the ACCEPTED_BILLING_TERMS flag
+          'unaccept_terms= scoobe.server:unaccept',
+
+          # set the ACCEPTED_BILLING_TERMS flag
+          'accept_terms= scoobe.server:accept',
+
+          # get the activation code for a device (won't work if not provisioned)
+          'activation_code = scoobe.server:print_activation_code'] }
       )
 

@@ -49,6 +49,11 @@ class CloudTarget(Enum):
     def __str__(self):
         return self.value
 
+def master_clear():
+    d = get_connected_device()
+    adb(['shell', 'am', 'broadcast', '-a', 'android.intent.action.MASTER_CLEAR'])
+    sleep(d.get_shutdown_delay())
+
 def set_target():
     parser = ArgumentParser()
     parser.add_argument("target", type=CloudTarget, choices=list(CloudTarget))

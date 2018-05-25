@@ -179,16 +179,26 @@ While the above ssh session is active, there should be a local port which is for
                     {'id': '3085', 'uuid': b'TCF09QDYHEDQ8'}
             [Disconnecting from dev1.]
         {"id": "3085", "uuid": "TCF09QDYHEDQ8"}
-        
-    ... more coming soon
+
+##### Wait for a reboot to complete and press "Pick Language"
+
+    .venv ❯ wait_ready && press_button "Pick Language"
+        waiting for device  ... ready
+
+##### Wait for a connection and press "Next"
+
+    .venv ❯ wait_text "Successfully connected" && press_button "Next"
+        waiting for text ... found
+
+##### More coming soon...
 
 ## Supported Devices
 
 Unit tests pass for Flex and Mini, other devices coming soon.
 
-## snac List
+## SNAC List
 
-See [setup.py](setup.py) for a list of commands.  Each supports interactive help, like so:
+See [setup.py](setup.py) for the full list.  Each supports interactive help, like so:
 
     .venv ❯ provision_device -h
         usage: provision_device [-h] serial_num cpuid ssh_config_host merchant
@@ -196,7 +206,7 @@ See [setup.py](setup.py) for a list of commands.  Each supports interactive help
         positional arguments:
           serial_num       the device serial number
           cpuid            the device cpu id
-          ssh_config_host  ssh alias, appears: 'Host: <here>' in ~/.ssh/config
+          ssh_config_host  ssh host of the server (specified in ~/.ssh/config)
           merchant         UUID of merchant that will be using this device
 
 ## With an IDE

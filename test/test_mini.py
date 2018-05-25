@@ -1,6 +1,5 @@
 import unittest
-from scoobe import get_connected_device
-from scoobe import device
+from scoobe.device import get_connected_device
 from test.device_common import test_get_set_target
 
 import IPython

@@ -2,13 +2,13 @@ import unittest
 import re
 import sh
 import scoobe
-from scoobe import get_connected_device
+from scoobe.device import get_connected_device
 
-import IPython
-def undebug():
-    def noop():
-        pass
-    IPython.embed = noop
+#import IPython
+#def undebug():
+#    def noop():
+#        pass
+#    IPython.embed = noop
 
 class DeviceTest(unittest.TestCase):
 

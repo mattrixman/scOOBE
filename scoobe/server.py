@@ -13,7 +13,7 @@ SerialSsh = namedtuple('SerialSsh', 'serial_num ssh_config')
 def parse_serial_ssh():
     parser = ArgumentParser()
     parser.add_argument("serial_num", type=str, help="the device serial number")
-    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
     args = parser.parse_args()
 
     if not re.match(r'C[A-Za-z0-9]{3}[UE][CQNOPRD][0-9]{8}', args.serial_num):
@@ -179,7 +179,7 @@ def get_mid(ssh_config, uuid):
 def print_merchant_id():
     parser = ArgumentParser()
     parser.add_argument("serial_num", type=str, help="the device serial number")
-    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
     parser.add_argument("merchant_uuid", type=str,
             help="the merchant uuid that we want a merchant id for")
     args = parser.parse_args()
@@ -232,7 +232,7 @@ def parse_serial_ssh_merch():
     parser = ArgumentParser()
     parser.add_argument("serial_num", type=str, help="the device serial number")
     parser.add_argument("cpuid", type=str, help="the device cpu id")
-    parser.add_argument("ssh_config_host", type=str, help="ssh alias, appears: 'Host: <here>' in ~/.ssh/config")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
     parser.add_argument("merchant", type=str,
             help="UUID of merchant that will be using this device")
     args = parser.parse_args()

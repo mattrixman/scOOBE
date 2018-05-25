@@ -1,15 +1,13 @@
+from uiautomator import device as ui
+from collections import namedtuple
+from argparse import ArgumentParser
 import xml.etree.ElementTree as ET
 import re
 
 def press():
-    print("press!")
+    parser = ArgumentParser()
+    parser.add_argument("button_text", type=str)
+    args = parser.parse_args()
 
-class Button:
-    def __init__(self, ui_xml, tag_mask):
-        self.foo = "foo"
-
-    def test(self):
-        return self.foo
-
-    def test2():
-        return "bar"
+    ui.screen.on()
+    ui(text=args.button_text).click()
