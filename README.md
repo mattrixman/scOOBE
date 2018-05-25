@@ -117,10 +117,7 @@ While the above ssh session is active, there should be a local port which is for
 
 ##### Set the device target to dev1
 
-    .venv ❯ target_device dev dev1.dev.clover.com && wait_ready && device_info | jq .targeting
-        targeting device to: dev1.dev.clover.com
-        waiting for device  ... ready
-        "dev:dev1.dev.clover.com"
+    .venv ❯ target_device dev dev1.dev.clover.com
 
 ##### See which merchant is associated with this device
 
@@ -182,6 +179,8 @@ While the above ssh session is active, there should be a local port which is for
                     {'id': '3085', 'uuid': b'TCF09QDYHEDQ8'}
             [Disconnecting from dev1.]
         {"id": "3085", "uuid": "TCF09QDYHEDQ8"}
+        
+    ... more coming soon
 
 ## Supported Devices
 
