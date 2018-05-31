@@ -5,8 +5,8 @@ import json
 from collections import namedtuple
 from argparse import ArgumentParser
 from scoobe.common import StatusPrinter, Indent, print_request, print_response
-from scoobe.ssh_common import SshConfig
-from scoobe.mysql_common import Query
+from scoobe.ssh import SshConfig
+from scoobe.mysql import Query
 
 # grab the serial number and ssh config from the command line
 SerialSsh = namedtuple('SerialSsh', 'serial_num ssh_config')

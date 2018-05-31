@@ -1,7 +1,8 @@
 import _mysql
 from textwrap import dedent
 from scoobe.common import StatusPrinter, Indent
-from scoobe.ssh_common import SshConfig, SshTunnel
+from scoobe.properties import LocalServer
+from scoobe.ssh import SshConfig, PossibleSshTunnel
 
 # encapsulates a mysql query
 class Query:
@@ -19,13 +20,13 @@ class Query:
     # called internally, parameter will be called with post-query connection string
     def execute(self, then=lambda db : None, printer=StatusPrinter()):
         # open an ssh tunnel
-        with SshTunnel(self.ssh_config, printer) as tun:
+        with PossibleSshTunnel(self.ssh_config, printer) as tun:
             with Indent(printer):
                 # open a mysql connection
                 db = _mysql.connect(user=self.mysql_user,
-                                    host='127.0.0.1',
-                                    port=tun.mysql_port,
-                                    db='meta',
+                                    host=tun.mysql().host,
+                                    port=tun.mysql().port,
+                                    db=tun.mysql().db,
                                     passwd=self.mysql_pass)
 
                 # show the query then run it

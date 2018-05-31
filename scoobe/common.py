@@ -1,5 +1,61 @@
 import sys
 from textwrap import indent
+from abc import ABC, abstractmethod
+from collections import namedtuple
+
+UserPass = namedtuple('UserPass', 'user passwd')
+
+class ServerTarget(ABC):
+
+    def __init__(self):
+        super().__init__()
+
+    # a user-defined name for this host
+    # - might be a hostname
+    # - might be an ssh config entry
+    @abstractmethod
+    def get_name(self):
+        pass
+
+    # the hostname to use for public-facing network access
+    @abstractmethod
+    def get_hostname(self):
+        pass
+
+    # the port to use for public-facing network access
+    @abstractmethod
+    def get_http_port(self):
+        pass
+
+    @abstractmethod
+    def get_mysql_port(self):
+        pass
+
+    @abstractmethod
+    def get_db_name(self):
+        pass
+
+    # the hostname to use for http admin access
+    # and also mysql access
+    @abstractmethod
+    def get_admin_hostname(self):
+        pass
+
+    # the port to use for http admin access
+    @abstractmethod
+    def get_admin_http_port(self):
+        pass
+
+    # read-only
+    @abstractmethod
+    def get_readonly_mysql_creds(self):
+        pass
+
+    # read-write
+    @abstractmethod
+    def get_readwrite_mysql_creds(self):
+        pass
+
 
 # print status to stderr so that only the requested value is written to stdout
 # (the better for consumption by a caller)
