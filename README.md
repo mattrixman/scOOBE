@@ -222,6 +222,12 @@ From there, you can invoke a snac like you would any other command.
 
 Notice that the status messages are written to STERR, but the requested data is written to STDOUT.  This makes it easy to get what you asked for, while still knowing what went down.
 
+## Versions
+
+| Version | Focus |
+| :-- | :-- |
+| [v0.0](https://github.com/mattrixman/scOOBE/releases/tag/v0.0) | Initial Release |
+
 ## Feedback
 
 Feel free to submit bugs and feature requests as issues.  PR's happily accepted too.
