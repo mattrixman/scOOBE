@@ -1,7 +1,7 @@
 import unittest
 import _mysql
 from scoobe import server
-from scoobe.ssh_common import SshTunnel, SshConfig
+from scoobe.ssh import PossibleSshTunnel, SshConfig
 import sys
 
 class Server(unittest.TestCase):
@@ -17,7 +17,7 @@ class Server(unittest.TestCase):
             stdout = sys.stdout
 
             # nullify stdout
-            sys.stdout = SshTunnel.NullDevice()
+            sys.stdout = PossibleSshTunnel.NullDevice()
 
             # make some noise
             with self.assertRaises(ValueError):
@@ -29,22 +29,20 @@ class Server(unittest.TestCase):
 
     def test_dont_reopen_tunnel(self):
         config = SshConfig('dev1')
-        with SshTunnel(config) as tun:
+        with PossibleSshTunnel(config) as tun:
             with self.assertRaises(Exception):
-                with SshTunnel(config) as tun2:
-                    self.assertFail(msg="SshTunnel should throw before control makes it here")
-
+                with PossibleSshTunnel(config) as tun2:
+                    self.assertFail(msg="PossibleSshTunnel should throw before control makes it here")
 
 #    def test_throw_if_host_but_no_forward(self):
 #        with self.assertRaises(ValueError):
 #            server.mysql_port('github.com')
 
-
     # This test pases
     def test_query_through_tunnel(self):
         config = SshConfig('dev1')
-        with SshTunnel(config) as tun:
-            db = _mysql.connect(user='root', host='127.0.0.1', port=tun.mysql_port, db='meta', passwd='test123')
+        with PossibleSshTunnel(config) as tun:
+            db = _mysql.connect(user='root', host='127.0.0.1', port=tun.mysql().port, db='meta', passwd='test123')
             db.query("""
                      SELECT @@hostname;
                      """)

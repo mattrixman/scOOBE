@@ -9,10 +9,17 @@ if python --version | grep '3\.' > /dev/null ; then
     python -m unittest -v test.test_server.Server
 else
     echo "Please use python 3"
-    echo "(consider using a virtual environment:"
-    echo "    python3 -m venv .venv && source .venv/bin/activate"
+    echo "(consider setting up a virtual environment:"
+    echo "    python3 -m venv .venv       # <-- create it "
+    echo "    source .venv/bin/activate   # <-- enter it "
+    echo "    python setup.py develop     # <-- set it up for this project"
     echo "    $0"
-    echo "    deactivate # <-- to exit the evironment"
+    echo "    deactivate                  # <-- to exit it"
+    echo ")"
+    echo "(or using an existing one:"
+    echo "    source .venv/bin/activate"
+    echo "    $0"
+    echo "    deactivate"
     echo ")"
 fi
 
