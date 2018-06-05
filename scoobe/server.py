@@ -35,7 +35,7 @@ def get_merchant(serial_num, ssh_config, printer=StatusPrinter()):
                         WHERE serial_number = '{}');
             """.format(serial_num))
 
-    q.on_empty("this device is not associated with a merchant on {}".format(ssh_config.ssh_host))
+    q.on_empty("this device is not associated with a merchant on {}".format(ssh_config.get_name()))
 
     return q.get_from_first_row(
             lambda row: Merchant(row['id'], row['uuid'].decode('utf-8')),
@@ -46,7 +46,7 @@ def print_merchant():
     args = parse_serial_ssh()
 
     printer = StatusPrinter(indent=0)
-    printer("Finding {}'s merchant according to {}".format(args.serial_num, args.ssh_config.ssh_host))
+    printer("Finding {}'s merchant according to {}".format(args.serial_num, args.ssh_config.get_name()))
 
     try:
         with Indent(printer):
