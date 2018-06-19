@@ -40,6 +40,12 @@ setup(name='scoobe',
           # given a merchant uuid, print the merchant id that goes with it
           'get_merchant_id = scoobe.server:print_merchant_id',
 
+          # given a serial number and a server, see which reseller the server thinks the device goes with
+          'device_reseller = scoobe.server:print_device_reseller',
+
+          # given a merchant_id and a server, see which reseller the server thinks the merchant goes with
+          'merchant_reseller = scoobe.server:print_merchant_reseller',
+
           # detach the specified device from whichever merchant it is currently associated with
           'deprovision_device = scoobe.server:deprovision',
 

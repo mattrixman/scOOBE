@@ -167,7 +167,7 @@ class PossibleSshTunnel:
 
             if port_open(self.target.get_mysql_port()):
                 raise OSError("The local port ({}) you're trying to forward is already open.  "
-                                  .format(self.target.mysql_port())
+                                  .format(self.target.get_mysql_port())
                              + "Close it first.")
 
             # begin connecting

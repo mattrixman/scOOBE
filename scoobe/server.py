@@ -23,6 +23,20 @@ def parse_serial_ssh():
 
     return SerialSsh(args.serial_num, ssh_config)
 
+MerchantSsh = namedtuple('MerchantSsh', 'merchant_uuid ssh_config')
+def parse_serial_ssh():
+    parser = ArgumentParser()
+    parser.add_argument("merchant_uuid", type=str, help="the uuid of the merchant")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
+    args = parser.parse_args()
+
+    if not re.match(r'[A-Za-z0-9]{13}', args.merchant_uuid):
+       raise ValueError("{} doesn't look like a merchant UUID".format(args.merchant_uuid))
+
+    ssh_config = SshConfig(args.ssh_config_host)
+
+    return MerchantSsh(args.merchant_uuid, ssh_config)
+
 # returns the merchant currently associated with the specified device
 Merchant = namedtuple('Merchant', 'id uuid')
 def get_merchant(serial_num, ssh_config, printer=StatusPrinter()):
@@ -56,12 +70,106 @@ def print_merchant():
         printer(str(ex))
         sys.exit(30)
 
-def print_activation_code():
-    args = parse_serial_ssh()
-    printer = StatusPrinter(indent=0)
-    printer("Getting Activation Code")
+# returns the merchant currently associated with the specified device
+Reseller = namedtuple('Reseller', 'id uuid name')
+def get_device_reseller(serial_num, ssh_config, printer=StatusPrinter()):
+
+    q = Query(ssh_config, 'metaRO', 'test321',
+            """
+            SELECT id, uuid, name
+            FROM reseller
+            WHERE id = (SELECT reseller_id
+                        FROM device_provision
+                        WHERE serial_number = '{}');
+            """.format(serial_num))
+
+    q.on_empty("this device is not associated with a reseller on {}".format(ssh_config.get_name()))
+
+    return q.get_from_first_row(
+            lambda row: Reseller(row['id'], row['uuid'].decode('utf-8'), row['name'].decode('utf-8')),
+            printer=printer)
+
+def set_device_reseller(serial_num, ssh_config, target_reseller_id, printer=StatusPrinter()):
+
+    printer("Setting the device's reseller to {}".format(target_reseller_id))
+    done_msg = None
+
     with Indent(printer):
-        print(get_activation_code(args.ssh_config, args.serial_num, printer=printer))
+        printer("Checking the device's reseller")
+        with Indent(printer):
+            current_reseller = get_device_reseller(serial_num, ssh_config, printer)
+
+        # don't modify if desired value is already set
+        if int(current_reseller.id) == int(target_reseller_id):
+            printer("The device's current reseller is the same as the target reseller ({})"
+                    .format(target_reseller_id))
+            done_msg = "Made no changes"
+
+        # otherwise motfdy
+        else:
+            printer("Changing the device's reseller: {} -> {}".format(current_reseller.id, target_reseller_id))
+            with Indent(printer):
+
+                q = Query(ssh_config, 'metaRW', 'test789',
+                        """
+                        UPDATE device_provision
+                        SET reseller_id = {}
+                        WHERE serial_number = '{}';
+                        """.format(target_reseller_id, serial_num))
+
+                rows_changed = q.run_get_rows_changed(printer=printer)
+                if rows_changed == 1:
+                    done_msg = "NOTICE: the attached device's reseller has changed from {} to {}".format(
+                        current_reseller.id, target_reseller_id)
+                else:
+                    raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+    # summarize activity
+    if done_msg:
+        printer(done_msg)
+
+def print_device_reseller():
+    args = parse_serial_ssh()
+
+    printer = StatusPrinter(indent=0)
+    printer("Finding {}'s reseller according to {}".format(args.merchant_uuid, args.ssh_config.get_name()))
+
+    try:
+        with Indent(printer):
+            reseller = get_merchant_reseller(args.merchant_uuid, args.ssh_config, printer=printer)
+        print(json.dumps(reseller._asdict()))
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+def get_merchant_reseller(merchant_uuid, ssh_config, printer=StatusPrinter()):
+    q = Query(ssh_config, 'metaRO', 'test321',
+            """
+            SELECT id, uuid, name
+            FROM reseller
+            WHERE id = (SELECT reseller_id
+                        FROM merchant
+                        WHERE uuid = '{}');
+            """.format(merchant_uuid))
+
+    q.on_empty("this device is not associated with a reseller on {}".format(ssh_config.get_name()))
+
+    return q.get_from_first_row(
+            lambda row: Reseller(row['id'], row['uuid'].decode('utf-8'), row['name'].decode('utf-8')),
+            printer=printer)
+
+def print_merchant_reseller():
+    args = parse_serial_ssh()
+
+    printer = StatusPrinter(indent=0)
+    printer("Finding {}'s reseller according to {}".format(args.merchant_uuid, args.ssh_config.get_name()))
+
+    try:
+        with Indent(printer):
+            reseller = get_merchant_reseller(args.merchant_uuid, args.ssh_config, printer=printer)
+        print(json.dumps(reseller._asdict()))
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
 
 def get_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
 
@@ -70,10 +178,16 @@ def get_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
             SELECT activation_code FROM device_provision WHERE serial_number = '{}';
             """.format(serial_num))
 
-    q.on_empty("This device is not known to {}".format(ssh_config.ssh_host))
+    q.on_empty("This device is not known to {}".format(ssh_config.get_name()))
 
     return int(q.get_from_first_row(lambda row: row['activation_code'].decode('utf-8'),
                                     printer=printer))
+def print_activation_code():
+    args = parse_serial_ssh()
+    printer = StatusPrinter(indent=0)
+    printer("Getting Activation Code")
+    with Indent(printer):
+        print(get_activation_code(args.ssh_config, args.serial_num, printer=printer))
 
 def get_acceptedness(ssh_config, serial_num, printer=StatusPrinter()):
     q = Query(ssh_config, 'metaRO', 'test321',
@@ -88,10 +202,11 @@ def get_acceptedness(ssh_config, serial_num, printer=StatusPrinter()):
                     name = 'ACCEPTED_BILLING_TERMS';
              """.format(serial_num))
 
-    q.on_empty("this device is not associated with a merchant on {}".format(ssh_config.ssh_host))
+    q.on_empty("this device is not associated with a merchant on {}".format(ssh_config.get_name()))
 
     try:
-        value = q.get_from_first_row(lambda row: row['value'])
+        value = q.get_from_first_row(lambda row: row['value'],
+                printer=printer)
     except ValueError as ex:
         printer(str(ex))
         sys.exit(40)
@@ -164,33 +279,20 @@ def get_auth_token(ssh_config, url):
     return auth_token
 
 # get the mid of the merchant with this uuid
-def get_mid(ssh_config, uuid):
+def get_mid(ssh_config, uuid, printer=StatusPrinter()):
 
     q = Query(ssh_config, 'metaRO', 'test321',
             """
                 SELECT id FROM merchant WHERE uuid='{}' LIMIT 1;
             """.format(uuid))
 
-    mid_str = q.get_from_first_row(lambda row: row['id'])
+    mid_str = q.get_from_first_row(lambda row: row['id'], printer=printer)
 
     return int(mid_str)
 
 # print the mid of the merchant with the specified uuid
 def print_merchant_id():
-    parser = ArgumentParser()
-    parser.add_argument("serial_num", type=str, help="the device serial number")
-    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
-    parser.add_argument("merchant_uuid", type=str,
-            help="the merchant uuid that we want a merchant id for")
-    args = parser.parse_args()
-
-    printer = StatusPrinter(indent=0)
-    printer("Finding {}'s id  according to {}".format(args.merchant_uuid, args.ssh_config_host))
-
-    if not re.match(r'[A-Za-z0-9]{13}', args.merchant_uuid):
-       raise ValueError("{} doesn't look like a merchant UUID".format(args.merchant_uuid))
-
-    ssh_config = SshConfig(args.ssh_config_host)
+    args = parse_merchant_ssh()
     print(get_mid(ssh_config, args.merchant_uuid))
 
 # deprovision device from merchant
@@ -256,29 +358,40 @@ def provision():
 
     printer = StatusPrinter(indent=0)
     printer("Provisioning Device")
-
     with Indent(printer):
+
+        printer("Checking merchant reseller")
+        with Indent(printer):
+            merchant_reseller = get_merchant_reseller(args.merchant, args.ssh_config, printer=printer).id
+
+        printer("Ensuring device/merchant resellers match")
+        with Indent(printer):
+            set_device_reseller(args.serial_num, args.ssh_config, merchant_reseller, printer=printer)
 
         endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.ssh_config.hostname,
                 args.merchant,
                 args.serial_num)
 
-        auth_token = get_auth_token(args.ssh_config,
-                '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/provision')
+        printer("Getting provision endpoint auth token")
+        with Indent(printer):
+            auth_token = get_auth_token(args.ssh_config,
+                    '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/provision')
 
-        headers = {'Authorization' : 'Bearer ' + auth_token }
+        printer("Provisioning device to merchant")
+        with Indent(printer):
+            headers = {'Authorization' : 'Bearer ' + auth_token }
 
-        data = {'mId': get_mid(args.ssh_config, args.merchant),
-                'merchantUuid': args.merchant,
-                'serial': args.serial_num,
-                'chipUid': args.cpuid}
+            data = {'mId': get_mid(args.ssh_config, args.merchant, printer=printer),
+                    'merchantUuid': args.merchant,
+                    'serial': args.serial_num,
+                    'chipUid': args.cpuid}
 
-        print_request(printer, endpoint, headers, data)
+            print_request(printer, endpoint, headers, data)
 
-        response = requests.put(endpoint, headers = headers, data=data)
+            response = requests.put(endpoint, headers = headers, data=data)
 
-        print_response(printer, response)
+            print_response(printer, response)
 
     if response.status_code == 200:
         printer('OK')

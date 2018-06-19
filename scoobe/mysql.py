@@ -16,15 +16,27 @@ class Query:
     def on_empty(self, message):
         self._empty_message = message
 
+    # If host='localhost' then mysql tries to use the socket (local fs) and doesn't actually connect through the tunnel
+    # This forces everything through the network socket (slower, but consistent between ssh-tunneled and
+    # locally-running usage)
+    def get_mysql_host(configured_host):
+        if configured_host != 'localhost':
+            return configured_host
+        else:
+            return '127.0.0.1'
+
     # called externally when the user doesn't need to read data
     # called internally, parameter will be called with post-query connection string
     def execute(self, then=lambda db : None, printer=StatusPrinter()):
         # open an ssh tunnel
         with PossibleSshTunnel(self.ssh_config, printer) as tun:
             with Indent(printer):
+
+                host = Query.get_mysql_host(tun.mysql().host)
+
                 # open a mysql connection
                 db = _mysql.connect(user=self.mysql_user,
-                                    host=tun.mysql().host,
+                                    host=host,
                                     port=tun.mysql().port,
                                     db=tun.mysql().db,
                                     passwd=self.mysql_pass)
@@ -37,6 +49,9 @@ class Query:
 
                 # do what the caller wanted
                 return then(db)
+
+    def run_get_rows_changed(self, printer=StatusPrinter()):
+        return self.execute(then=lambda db : db.affected_rows(), printer=printer)
 
     def get_from_first_row(self, getter, printer=StatusPrinter()):
         def get_row_val(db):

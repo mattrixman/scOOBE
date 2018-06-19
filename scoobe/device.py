@@ -69,9 +69,11 @@ def get_connected_device():
         r's/^.*serial.*\[\(C[A-Za-z0-9]\{3\}[UE][CQNOPRD][0-9]\{8\}\).*$/\1/p')).split('\n')[0]
     assert(len(serial) > 0)
 
-    # tested for flex and mini
-    cpuid = str(sed(adb.shell('getprop'), '-n',
-        r's/^.*cpuid.*\[\([0-9a-fA-F]\{32\}\).*$/\1/p')).split('\n')[0]
+    # Station 2018 returns two cpuids, one of which is all 0's
+    # Flex and Mini return just one
+    # This takes the highest (string order) which works for both
+    cpuid = sorted(list(sed(adb.shell('getprop'), '-n',
+        r's/^.*cpuid.*\[\([0-9a-fA-F]\{32\}\).*$/\1/p')))[-1].strip()
     assert(len(cpuid) > 0)
 
     codename = prefix2codename[serial[2:4]]
@@ -152,7 +154,14 @@ class Station(Device):
     pass
 
 class Station2018(Device):
-    pass
+
+    def get_target(self):
+        self.wait_ready()
+        target = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
+        url = str(adb.shell('cat', '/pip/CLOVER_CLOUD_URL'))
+        if re.match('http://.*', url):
+            url = url[7:]
+        return (target, url)
 
 # use digits 2-4 of serial to identify device
 # https://confluence.dev.clover.com/display/ENG/How+to+decipher+a+Clover+device+serial+number
