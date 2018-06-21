@@ -216,13 +216,25 @@ def get_local_remote_ip(printer=StatusPrinter()):
     printer("Device Address Candidates:")
     device_addresses = set()
     with Indent(printer):
-        device_ip_strs = set(re.findall(r'[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+', str(adb(['shell', 'ip', 'route']))))
+        # keep only things that look like ip addresses
+        device_ip_strs = set(re.findall(r'[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+',
+            str(
+                sed(
+                    # TODO: this would be cleaner with 'adb shell netcfg' which I discovered too late
+
+                    # dump the routing table
+                    adb(['shell', 'ip', 'route']),
+
+                    # print only lines containing 'src', and only the part after the 'src'
+                    ['-n', r's#^.*src\(.*\)$#\1#p']
+                    )
+                ).strip()))
+
         for ip_str in device_ip_strs:
             address = read_ip("route entry",  ip_str, printer)
             if address is not None:
                 device_addresses.add(address)
         printer('')
-
 
     # In an ip address, the more significant bits are subnet bits, less significant ones are network bits
     # XOR will give subnet zeros when two ip addresses are in the same subnet. Therefore, smaller distances
@@ -277,10 +289,8 @@ def probe_network():
 
     if local_remote:
         print(json.dumps({ "local_ip" : local_remote[0],
-                           "remote_ip" : local_remote[1] }))
+                           "device_ip" : local_remote[1] }))
     else:
         printer("No connectivity between local machine and device")
         sys.exit(40)
-
-
 
