@@ -19,7 +19,7 @@ setup(name='scoobe',
           'master_clear = scoobe.device:master_clear',
 
           # print a json dictionary of stuff about the device
-          'device_info = scoobe.device:info',
+          'device_info = scoobe.device:print_info',
 
           # if the device is rebooting, wait for it to be ready for further commands
           'wait_ready = scoobe.device:wait_ready',
@@ -28,13 +28,20 @@ setup(name='scoobe',
           'target_device = scoobe.device:set_target',
 
           # print the device's serial number
-          'device_serial = scoobe.device:get_serial',
+          'device_serial = scoobe.device:print_serial',
 
           # print the device's cpu id
-          'device_cpuid = scoobe.device:get_cpuid',
+          'device_cpuid = scoobe.device:print_cpuid',
 
-          # scan local network adapters, find ip address of the one that can ping the connected device
+          # find an IP address pair, each of which can ping each other, one goes with a network interface on the device
+          # the other that goes with localhost
           'probe_network = scoobe.device:probe_network',
+
+          # probe the network (like above) but only print the local ip
+          'device_facing_local_ip = scoobe.device:print_local_ip',
+
+          # probe the network (like above) but only print the device ip
+          'device_ip = scoobe.device:print_device_ip',
 
           # given a serial number and a server, see which merchant the server thinks the device goes with
           'device_merchant = scoobe.server:print_merchant',

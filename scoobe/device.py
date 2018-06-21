@@ -13,14 +13,26 @@ from enum import Enum
 from itertools import product as cross_product
 from sh import adb, sed, sort, egrep, sleep, head, ping
 
-def info():
-    print(json.dumps(get_connected_device().get_info()))
+def print_info():
+    printer = StatusPrinter(indent=0)
+    printer("Getting device info")
+    with Indent(printer):
+        info = json.dumps(get_connected_device(printer=printer).get_info())
+    print(info)
 
-def get_serial():
-    print(get_connected_device().get_info()['serial'])
+def print_serial():
+    printer = StatusPrinter(indent=0)
+    printer("Getting device serial")
+    with Indent(printer):
+        serial = get_connected_device(printer=printer).get_info()['serial']
+    print(serial)
 
-def get_cpuid():
-    print(get_connected_device().get_info()['cpuid'])
+def print_cpuid():
+    printer = StatusPrinter(indent=0)
+    printer("Getting device cpuid")
+    with Indent(printer):
+        cpuid = get_connected_device().get_info()['cpuid']
+    print(cpuid)
 
 def ready():
     try:
@@ -30,9 +42,9 @@ def ready():
     except sh.ErrorReturnCode:
         return False
 
-def wait_ready():
+def wait_ready(printer=StatusPrinter()):
     if not ready():
-        print('waiting for device ', end='')
+        printer('waiting for device ', end='')
         spinner = itertools.cycle(['-', '\\', '|', '/'])
         while not ready():
             sys.stdout.write(next(spinner))
@@ -41,7 +53,7 @@ def wait_ready():
             sys.stdout.write('\b')
             sys.stdout.flush()
         sleep(1)
-        print(' ... ready')
+        printer(' ... ready')
 
 class CloudTarget(Enum):
     prod_us = 'prod_us'
@@ -53,8 +65,14 @@ class CloudTarget(Enum):
         return self.value
 
 def master_clear():
-    d = get_connected_device()
-    adb(['shell', 'am', 'broadcast', '-a', 'android.intent.action.MASTER_CLEAR'])
+    printer = StatusPrinter(indent=0)
+    printer("Clearing Device")
+    with Indent(printer):
+        with Indent(printer):
+            d = get_connected_device(printer=printer)
+        cmd = ['shell', 'am', 'broadcast', '-a', 'android.intent.action.MASTER_CLEAR']
+        printer('\'' + ' '.join(cmd) + '\'')
+        adb(cmd)
     sleep(d.get_shutdown_delay())
 
 def set_target():
@@ -62,12 +80,16 @@ def set_target():
     parser.add_argument("target", type=CloudTarget, choices=list(CloudTarget))
     parser.add_argument("url", type=str)
     args=parser.parse_args()
-    get_connected_device().set_target(args.target, args.url)
 
-def get_connected_device():
-    wait_ready()
+    printer = StatusPrinter(indent=0)
+    printer("Targeting attached device to {} {}".format(args.target, args.url))
+    with Indent(printer):
+        get_connected_device(printer=printer).set_target(args.target, args.url)
 
-    # tested for flex and mini
+def get_connected_device(printer=StatusPrinter()):
+    wait_ready(printer)
+
+    # tested for flex, mini, and station_2018
     serial = str(sed(adb.shell('getprop'), '-n',
         r's/^.*serial.*\[\(C[A-Za-z0-9]\{3\}[UE][CQNOPRD][0-9]\{8\}\).*$/\1/p')).split('\n')[0]
     assert(len(serial) > 0)
@@ -85,6 +107,9 @@ def get_connected_device():
     device.serial = serial
     device.cpuid = cpuid
     device.codename = codename
+
+    printer("Found attached device: " + str(device))
+
     return device
 
 # base class for devices
@@ -103,27 +128,33 @@ class Device:
                 "cpuid":self.cpuid,
                 "targeting":target}
 
-    def set_target(self, target, url):
+    def set_target(self, target, url, printer=StatusPrinter()):
         self.wait_ready()
 
         if re.match('http://.*', url):
             url = url[7:]
 
-        print("targeting device to: " + url)
+        printer("Targeting device to: " + url)
+        with Indent(printer):
 
-        cmd = ['su', '1000', 'content', 'call', '--uri', 'content://com.clover.service.provider',
-            '--method', 'changeTarget', '--extra', 'target:s:{}:{}'.format(target, url)]
+            cmd = ['su', '1000', 'content', 'call', '--uri', 'content://com.clover.service.provider',
+                '--method', 'changeTarget', '--extra', 'target:s:{}:{}'.format(target, url)]
 
-        # print(' '.join(cmd))
-        adb.shell(cmd)
+            printer('\'' + ' '.join(cmd) + '\'')
+            adb.shell(cmd)
 
         # the above call causes a reset
         # wait until the adb connection is lost
+        printer("Waiting {} seconds for device to begin reboot..."
+                .format(self.get_shutdown_delay()))
         sleep(self.get_shutdown_delay())
 
     def wait_ready(self):
         # TODO: multiple connected devices
         wait_ready()
+
+    def __str__(self):
+        return "{} ({}) [{}]".format(self.codename, self.__class__.__name__, self.serial)
 
 # device specific classes
 
@@ -188,7 +219,9 @@ codename2class = { "GOLDLEAF"    : Station,
 
 def get_local_remote_ip(printer=StatusPrinter()):
 
-    Address = namedtuple("Address",  "address int")
+    printer("Probing Network From Both Sides")
+
+    Address = namedtuple("Address",  "ip_str int")
 
     def read_ip(msg, ip_str, printer):
         if '127.0.0.1' not in ip_str:
@@ -196,7 +229,6 @@ def get_local_remote_ip(printer=StatusPrinter()):
             return Address(ip_str, int(ipaddress.IPv4Address(ip_str)))
         else:
             return None
-
 
     # get all ipv4 addresses among the local network adapters
     printer("Local Addresses:")
@@ -271,26 +303,46 @@ def get_local_remote_ip(printer=StatusPrinter()):
     # sort local/remote pairs by distance
     matches = SortedDict()
     for local_ip, remote_ip in cross_product(local_addresses, device_addresses):
-        matches[subnet_distance(local_ip, remote_ip)] = (local_ip.address, remote_ip.address)
-
-    printer(matches)
+        matches[subnet_distance(local_ip, remote_ip)] = (local_ip.ip_str, remote_ip.ip_str)
 
     # check connectivity (nearest first)
     for local, remote in matches.values():
         if can_talk(local, remote, printer):
             return (local, remote)
 
-def probe_network():
+def probe_network(selector=lambda x : x, printer=StatusPrinter()):
 
-    printer = StatusPrinter(indent=0)
     printer("Probing Network From Both Sides")
     with Indent(printer):
         local_remote = get_local_remote_ip()
 
     if local_remote:
-        print(json.dumps({ "local_ip" : local_remote[0],
-                           "device_ip" : local_remote[1] }))
+        return selector({ "local_ip" : local_remote[0],
+                   "device_ip" : local_remote[1] })
     else:
         printer("No connectivity between local machine and device")
         sys.exit(40)
+
+def print_probe_network():
+
+    printer = StatusPrinter(indent=0)
+    print(probe_network(), printer=printer)
+
+def print_device_ip():
+
+    printer = StatusPrinter(indent=0)
+    printer("Seeking accessable device IP")
+
+    with Indent(printer):
+        device_ip = probe_network(selector = lambda x : x['device_ip'], printer=printer)
+    print(device_ip)
+
+def print_local_ip():
+
+    printer = StatusPrinter(indent=0)
+    printer("Seeking local IP accessable by device")
+
+    with Indent(printer):
+        local_ip = probe_network(selector = lambda x : x['local_ip'], printer=printer)
+    print(local_ip)
 
