@@ -8,7 +8,7 @@ from scoobe.common import StatusPrinter, Indent, print_request, print_response
 from scoobe.ssh import SshConfig
 from scoobe.mysql import Query
 
-# grab the serial number and ssh config from the command line
+# parse cli args, return one of these:
 SerialSsh = namedtuple('SerialSsh', 'serial_num ssh_config')
 def parse_serial_ssh():
     parser = ArgumentParser()
@@ -23,8 +23,46 @@ def parse_serial_ssh():
 
     return SerialSsh(args.serial_num, ssh_config)
 
+# parse cli args, return one of these:
+SerialSshCode = namedtuple('SerialSsh', 'serial_num ssh_config activation_code')
+def parse_serial_ssh_code():
+    parser = ArgumentParser()
+    parser.add_argument("serial_num", type=str, help="the device serial number")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
+    parser.add_argument("activation_code", type=str, help="the desired activation code")
+    args = parser.parse_args()
+
+    if not re.match(r'C[A-Za-z0-9]{3}[UE][CQNOPRD][0-9]{8}', args.serial_num):
+       raise ValueError("{} doesn't look like a serial number".format(args.serial_num))
+
+    ssh_config = SshConfig(args.ssh_config_host)
+
+    return SerialSshCode(args.serial_num, ssh_config, args.activation_code)
+
+# parse cli args, return one of these:
+SerialSshReseller = namedtuple('SerialSshReseller', 'serial_num ssh_config reseller_id')
+def parse_serial_ssh_reseller():
+
+    parser = ArgumentParser()
+    parser.add_argument("serial_num", type=str, help="the device serial number")
+    parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
+    parser.add_argument("reseller_id", type=int, help="the reseller id (int)")
+    args = parser.parse_args()
+
+    if not re.match(r'C[A-Za-z0-9]{3}[UE][CQNOPRD][0-9]{8}', args.serial_num):
+       raise ValueError("{} doesn't look like a serial number".format(args.serial_num))
+
+    ssh_config = SshConfig(args.ssh_config_host)
+
+    if not args.reseller_id >= 0:
+       raise ValueError("{} doesn't look like a reseller_id".format(args.reseller_id))
+
+    return SerialSshReseller(args.serial_num, ssh_config, args.reseller_id)
+
+# parse cli args, return one of these:
 MerchantSsh = namedtuple('MerchantSsh', 'merchant_uuid ssh_config')
-def parse_serial_ssh():
+def parse_merchant_ssh():
+
     parser = ArgumentParser()
     parser.add_argument("merchant_uuid", type=str, help="the uuid of the merchant")
     parser.add_argument("ssh_config_host", type=str, help="ssh host of the server (specified in ~/.ssh/config)")
@@ -37,9 +75,9 @@ def parse_serial_ssh():
 
     return MerchantSsh(args.merchant_uuid, ssh_config)
 
-# returns the merchant currently associated with the specified device
 Merchant = namedtuple('Merchant', 'id uuid')
 def get_merchant(serial_num, ssh_config, printer=StatusPrinter()):
+
     q = Query(ssh_config, 'metaRO', 'test321',
             """
             SELECT id, uuid
@@ -55,14 +93,13 @@ def get_merchant(serial_num, ssh_config, printer=StatusPrinter()):
             lambda row: Merchant(row['id'], row['uuid'].decode('utf-8')),
             printer=printer)
 
-# prints a json dictionary { "id" : "the_mid", "uuid" : "the_uuid" }
 def print_merchant():
-    args = parse_serial_ssh()
 
+    args = parse_serial_ssh()
     printer = StatusPrinter(indent=0)
-    printer("Finding {}'s merchant according to {}".format(args.serial_num, args.ssh_config.get_name()))
 
     try:
+        printer("Finding {}'s merchant according to {}".format(args.serial_num, args.ssh_config.get_name()))
         with Indent(printer):
             merchant = get_merchant(args.serial_num, args.ssh_config, printer=printer)
         print(json.dumps(merchant._asdict()))
@@ -89,57 +126,56 @@ def get_device_reseller(serial_num, ssh_config, printer=StatusPrinter()):
             lambda row: Reseller(row['id'], row['uuid'].decode('utf-8'), row['name'].decode('utf-8')),
             printer=printer)
 
-def set_device_reseller(serial_num, ssh_config, target_reseller_id, printer=StatusPrinter()):
-
-    printer("Setting the device's reseller to {}".format(target_reseller_id))
-    done_msg = None
-
-    with Indent(printer):
-        printer("Checking the device's reseller")
-        with Indent(printer):
-            current_reseller = get_device_reseller(serial_num, ssh_config, printer)
-
-        # don't modify if desired value is already set
-        if int(current_reseller.id) == int(target_reseller_id):
-            printer("The device's current reseller is the same as the target reseller ({})"
-                    .format(target_reseller_id))
-            done_msg = "Made no changes"
-
-        # otherwise motfdy
-        else:
-            printer("Changing the device's reseller: {} -> {}".format(current_reseller.id, target_reseller_id))
-            with Indent(printer):
-
-                q = Query(ssh_config, 'metaRW', 'test789',
-                        """
-                        UPDATE device_provision
-                        SET reseller_id = {}
-                        WHERE serial_number = '{}';
-                        """.format(target_reseller_id, serial_num))
-
-                rows_changed = q.run_get_rows_changed(printer=printer)
-                if rows_changed == 1:
-                    done_msg = "NOTICE: the attached device's reseller has changed from {} to {}".format(
-                        current_reseller.id, target_reseller_id)
-                else:
-                    raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
-    # summarize activity
-    if done_msg:
-        printer(done_msg)
-
 def print_device_reseller():
+
     args = parse_serial_ssh()
-
     printer = StatusPrinter(indent=0)
-    printer("Finding {}'s reseller according to {}".format(args.merchant_uuid, args.ssh_config.get_name()))
 
-    try:
+    printer("Finding {}'s reseller according to {}".format(args.serial_num, args.ssh_config.get_name()))
+    with Indent(printer):
+        merchant = get_device_reseller(args.serial_num, args.ssh_config, printer=printer)
+    print(json.dumps(merchant._asdict()))
+
+SetResult = namedtuple('SetResult', 'change_made description')
+def describe_set_device_reseller(serial_num, ssh_config, target_reseller_id, printer=StatusPrinter()):
+
+    printer("Checking the device's reseller")
+    with Indent(printer):
+        current_reseller = get_device_reseller(serial_num, ssh_config, printer)
+
+    # don't modify if desired value is already set
+    if int(current_reseller.id) == int(target_reseller_id):
+        return SetResult(False, "The device's current reseller is the same as the target reseller ({}), making no change"
+                                .format(target_reseller_id))
+
+    # otherwise motfdy
+    else:
+        printer("Changing the device's reseller: {} -> {}".format(current_reseller.id, target_reseller_id))
         with Indent(printer):
-            reseller = get_merchant_reseller(args.merchant_uuid, args.ssh_config, printer=printer)
-        print(json.dumps(reseller._asdict()))
-    except ValueError as ex:
-        printer(str(ex))
-        sys.exit(30)
+
+            q = Query(ssh_config, 'metaRW', 'test789',
+                    """
+                    UPDATE device_provision
+                    SET reseller_id = {}
+                    WHERE serial_number = '{}';
+                    """.format(target_reseller_id, serial_num))
+
+            rows_changed = q.run_get_rows_changed(printer=printer)
+            if rows_changed == 1:
+                return SetResult(False, "NOTICE: the attached device's reseller has changed from {} to {}".format(
+                                        current_reseller.id, target_reseller_id))
+            else:
+                raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+def print_set_device_reseller():
+
+    args = parse_serial_ssh_reseller()
+    printer = StatusPrinter(indent=0)
+
+    printer("Setting the device's reseller to {}".format(args.reseller_id))
+    with Indent(printer):
+        result = describe_set_device_reseller(args.serial_num, args.ssh_config, args.reseller_id, printer=printer)
+    printer(result.description)
 
 def get_merchant_reseller(merchant_uuid, ssh_config, printer=StatusPrinter()):
     q = Query(ssh_config, 'metaRO', 'test321',
@@ -159,11 +195,10 @@ def get_merchant_reseller(merchant_uuid, ssh_config, printer=StatusPrinter()):
 
 def print_merchant_reseller():
     args = parse_serial_ssh()
-
     printer = StatusPrinter(indent=0)
-    printer("Finding {}'s reseller according to {}".format(args.merchant_uuid, args.ssh_config.get_name()))
 
     try:
+        printer("Finding {}'s reseller according to {}".format(args.merchant_uuid, args.ssh_config.get_name()))
         with Indent(printer):
             reseller = get_merchant_reseller(args.merchant_uuid, args.ssh_config, printer=printer)
         print(json.dumps(reseller._asdict()))
@@ -182,6 +217,7 @@ def get_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
 
     return int(q.get_from_first_row(lambda row: row['activation_code'].decode('utf-8'),
                                     printer=printer))
+
 def print_activation_code():
     args = parse_serial_ssh()
     printer = StatusPrinter(indent=0)
@@ -217,6 +253,7 @@ def get_acceptedness(ssh_config, serial_num, printer=StatusPrinter()):
         return value.decode('utf-8')
 
 def set_acceptedness(ssh_config, serial_num, value, printer=StatusPrinter()):
+
     q = Query(ssh_config, 'metaRW', 'test789',
             """
             UPDATE setting SET value = {}
@@ -227,21 +264,107 @@ def set_acceptedness(ssh_config, serial_num, value, printer=StatusPrinter()):
                 AND
                     name = 'ACCEPTED_BILLING_TERMS';
              """.format(value, serial_num))
-    q.execute()
+
+    rows_changed = q.run_get_rows_changed(printer=printer)
+    if rows_changed != 1:
+        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+def set_activation_code(ssh_config, serial_num, value, printer=StatusPrinter()):
+
+    q = Query(ssh_config, 'metaRW', 'test789',
+            """
+            UPDATE device_provision SET activation_code = {}
+            WHERE serial_number = '{}';
+             """.format(value, serial_num))
+
+    rows_changed = q.run_get_rows_changed(printer=printer)
+    if rows_changed != 1:
+        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+def print_set_activation():
+
+    args = parse_serial_ssh_code()
+    printer = StatusPrinter(indent=0)
+
+    printer("Checking Activation Code")
+    with Indent(printer):
+        old_code = get_activation_code(args.ssh_config, args.serial_num, printer=printer)
+
+    if old_code == args.activation_code:
+        printer("No change needed")
+    else:
+        printer("Setting Activation Code")
+        with Indent(printer):
+            set_activation_code(args.ssh_config, args.serial_num, args.activation_code, printer=printer)
+
+def get_last_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
+
+    q = Query(ssh_config, 'metaRO', 'test321',
+            """
+            SELECT last_activation_code FROM device_provision WHERE serial_number = '{}';
+            """.format(serial_num))
+
+    q.on_empty("This device is not known to {}".format(ssh_config.get_name()))
+
+    return int(q.get_from_first_row(lambda row: row['last_activation_code'].decode('utf-8'),
+                                    printer=printer))
+
+def describe_increment_last_activation_code(ssh_config, serial_num, printer=StatusPrinter()):
+
+    q = Query(ssh_config, 'metaRW', 'test789',
+            """
+            UPDATE device_provision
+            SET last_activation_code = last_activation_code + 1
+            WHERE serial_number = '{}';
+            """.format(serial_num))
+
+    rows_changed = q.run_get_rows_changed(printer=printer)
+    if rows_changed == 1:
+        return SetResult(True, "The activation code is now fresh")
+    else:
+        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+def print_refresh_activation():
+    args = parse_serial_ssh()
+    printer = StatusPrinter(indent=0)
+
+    printer("Checking Last Activation Code")
+    with Indent(printer):
+        new_code = get_activation_code(args.ssh_config, args.serial_num, printer=printer)
+
+    printer("Checking Current Activation Code")
+    with Indent(printer):
+        old_code = get_last_activation_code(args.ssh_config, args.serial_num, printer=printer)
+
+    if old_code != new_code:
+        printer("Code is fresh, no change needed")
+    else:
+        printer("Code is stale, incrementing last_activation_code")
+        with Indent(printer):
+            result = describe_increment_last_activation_code(args.ssh_config, args.serial_num, printer=printer)
+        printer(result.description)
 
 def unaccept():
     args = parse_serial_ssh()
     printer = StatusPrinter(indent=0)
     printer("Clearing Terms Acceptance")
+    with Indent(printer):
 
-    set_acceptedness(args.ssh_config, args.serial_num, "NULL", printer)
+        desired_value = '\'0\''
+        # yes, that's the string containing 0
+        # word on the street is that it's better than 0 or null
 
-    new_val = get_acceptedness(args.ssh_config, args.serial_num, printer)
+        printer("Checking Acceptedness")
+        with Indent(printer):
+            accepted = get_acceptedness(args.ssh_config, args.serial_num, printer=printer)
 
-    if new_val is None:
-        printer("OK")
-    else:
-        raise ValueError("Failed to set acceptedness to {}.  Final value: {}".format("NULL", new_val))
+        if accepted == desired_value.strip('\''):
+            printer("Already cleared, no change needed")
+        else:
+            printer("Revoking Acceptedness")
+            with Indent(printer):
+                set_acceptedness(args.ssh_config, args.serial_num, desired_value, printer=printer)
+    printer("OK")
 
 def accept():
     args = parse_serial_ssh()
@@ -257,7 +380,7 @@ def accept():
         raise ValueError("Failed to set acceptedness to {}.  Final value: {}".format("1", new_val))
 
 # given a url and a server, get the auth token for that url on that server
-def get_auth_token(ssh_config, url):
+def get_auth_token(ssh_config, url, printer=StatusPrinter()):
 
     q = Query(ssh_config, 'metaRO', 'test321',
             """
@@ -271,7 +394,7 @@ def get_auth_token(ssh_config, url):
                     at.deleted_time IS NULL LIMIT 1;
             """.format(url))
 
-    auth_token = q.get_from_first_row(lambda row: row['HEX(at.uuid)'].decode('utf-8'))
+    auth_token = q.get_from_first_row(lambda row: row['HEX(at.uuid)'].decode('utf-8'), printer=printer)
 
     if not re.match(r'^[A-Z0-9]+$', auth_token):
         raise ValueError("Http header: 'AUTHORIZATION : BEARER {}' doesn't seem right.".format(auth_token))
@@ -366,7 +489,9 @@ def provision():
 
         printer("Ensuring device/merchant resellers match")
         with Indent(printer):
-            set_device_reseller(args.serial_num, args.ssh_config, merchant_reseller, printer=printer)
+            result = describe_set_device_reseller(args.serial_num, args.ssh_config, merchant_reseller, printer=printer)
+            if result.change_made:
+                printer(result.descrption)
 
         endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.ssh_config.hostname,
@@ -376,7 +501,8 @@ def provision():
         printer("Getting provision endpoint auth token")
         with Indent(printer):
             auth_token = get_auth_token(args.ssh_config,
-                    '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/provision')
+                    '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/provision',
+                    printer=printer)
 
         printer("Provisioning device to merchant")
         with Indent(printer):

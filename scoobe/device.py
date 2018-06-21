@@ -3,12 +3,15 @@ import itertools
 import sys
 import sh
 import json
+import ifaddr
+import ipaddress
+from scoobe.common import StatusPrinter, Indent
 from argparse import ArgumentParser
+from collections import namedtuple
+from sortedcontainers import SortedDict
 from enum import Enum
-from sh import adb
-from sh import sed
-from sh import egrep
-from time import sleep
+from itertools import product as cross_product
+from sh import adb, sed, sort, egrep, sleep, head, ping
 
 def info():
     print(json.dumps(get_connected_device().get_info()))
@@ -182,4 +185,102 @@ codename2class = { "GOLDLEAF"    : Station,
                    "KNOTTY_PINE" : Mini,
                    "BAYLEAF"     : Flex,
                    "GOLDEN_OAK"  : Station2018 }
+
+def get_local_remote_ip(printer=StatusPrinter()):
+
+    Address = namedtuple("Address",  "address int")
+
+    def read_ip(msg, ip_str, printer):
+        if '127.0.0.1' not in ip_str:
+            printer("{:>10}:  {}".format(msg, ip_str))
+            return Address(ip_str, int(ipaddress.IPv4Address(ip_str)))
+        else:
+            return None
+
+
+    # get all ipv4 addresses among the local network adapters
+    printer("Local Addresses:")
+    local_addresses = set()
+    with Indent(printer):
+        adapters = ifaddr.get_adapters()
+        for adapter in adapters:
+            for ip in adapter.ips:
+                ip_str = str(ip.ip)
+                if re.match(r'^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$', ip_str):
+                    address = read_ip(adapter.nice_name, ip_str, printer)
+                    if address is not None:
+                        local_addresses.add(address)
+        printer('')
+
+    # get all ipv4 addresses among the device's known routes
+    printer("Device Address Candidates:")
+    device_addresses = set()
+    with Indent(printer):
+        device_ip_strs = set(re.findall(r'[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+', str(adb(['shell', 'ip', 'route']))))
+        for ip_str in device_ip_strs:
+            address = read_ip("route entry",  ip_str, printer)
+            if address is not None:
+                device_addresses.add(address)
+        printer('')
+
+
+    # In an ip address, the more significant bits are subnet bits, less significant ones are network bits
+    # XOR will give subnet zeros when two ip addresses are in the same subnet. Therefore, smaller distances
+    # returned by this function indicate that the addresses are more likely to be able to talk to each other
+    def subnet_distance(ip_a, ip_b):
+        return ip_a.int ^ ip_b.int
+
+    # Ping local from remote, and ping remote from local
+    # Return true if both succeed
+    def can_talk(local, remote, printer):
+
+        printer("Pinging {} -> {}".format(remote, local))
+        with Indent(printer):
+            printer('''adb shell 'ping -c 4 {} && echo SUCCESS || echo FAIL' '''.format(local))
+            with Indent(printer):
+                remote2local = str(adb(['shell', 'ping -c 4 {} && echo SUCCESS || echo FAIL'.format(local)]))
+                printer(remote2local)
+
+        if 'SUCCESS' in remote2local:
+            printer("Pinging {} -> {}".format(local, remote))
+            with Indent(printer):
+                printer('ping -c 4 {}'.format(local))
+                with Indent(printer):
+                    try:
+                        local2remote = ping(['-c', '4', remote])
+                    except sh.ErrorReturnCode as err:
+                        local2remote = err
+                    printer(local2remote)
+
+            if local2remote.exit_code == 0:
+                return True
+        return False
+
+    # sort local/remote pairs by distance
+    matches = SortedDict()
+    for local_ip, remote_ip in cross_product(local_addresses, device_addresses):
+        matches[subnet_distance(local_ip, remote_ip)] = (local_ip.address, remote_ip.address)
+
+    printer(matches)
+
+    # check connectivity (nearest first)
+    for local, remote in matches.values():
+        if can_talk(local, remote, printer):
+            return (local, remote)
+
+def probe_network():
+
+    printer = StatusPrinter(indent=0)
+    printer("Probing Network From Both Sides")
+    with Indent(printer):
+        local_remote = get_local_remote_ip()
+
+    if local_remote:
+        print(json.dumps({ "local_ip" : local_remote[0],
+                           "remote_ip" : local_remote[1] }))
+    else:
+        printer("No connectivity between local machine and device")
+        sys.exit(40)
+
+
 
