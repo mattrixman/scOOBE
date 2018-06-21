@@ -52,6 +52,9 @@ setup(name='scoobe',
           # given a serial number and a server, see which reseller the server thinks the device goes with
           'device_reseller = scoobe.server:print_device_reseller',
 
+          # print the version names for all packages on the device matching 'com.clover*'
+          'device_packages = scoobe.device:print_device_packages',
+
           # given a serial number, a server, and a reseller id, set this device to that reseller according to that server
           'set_device_reseller = scoobe.server:print_set_device_reseller',
 
@@ -78,5 +81,6 @@ setup(name='scoobe',
 
           # refresh the activation code for a device if it is stale
           'refresh_activation = scoobe.server:print_refresh_activation',
+
 
           ]})

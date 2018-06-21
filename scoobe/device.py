@@ -11,7 +11,7 @@ from collections import namedtuple
 from sortedcontainers import SortedDict
 from enum import Enum
 from itertools import product as cross_product
-from sh import adb, sed, sort, egrep, sleep, head, ping
+from sh import adb, sed, sort, grep, egrep, sleep, head, ping
 
 def print_info():
     printer = StatusPrinter(indent=0)
@@ -346,3 +346,12 @@ def print_local_ip():
         local_ip = probe_network(selector = lambda x : x['local_ip'], printer=printer)
     print(local_ip)
 
+def print_device_packages():
+
+    listing = str(grep(egrep(adb(['shell', 'dumpsys', 'package', '*']), r'Package..com\.clover|versionName'), ['Package', '-A1']))
+    package_names = re.findall(r'Package \[(.*)\].*', listing)
+    versions = list(map(lambda x : x.strip(), re.findall(r'versionName=(.*)', listing)))
+    package2version = {}
+    for p, v in zip(package_names, versions):
+        package2version[p] = v
+    print(json.dumps(package2version, indent=4))
