@@ -1,7 +1,8 @@
 import argparse
+import re
 import os
 from collections import namedtuple
-from scoobe.common import ServerTarget
+from scoobe.common import ServerTarget, UserPass
 
 # is this a valid file?
 def valid_file(s):
@@ -36,7 +37,8 @@ class LocalServer(ServerTarget):
                     raise argparse.ArgumentTypeError("Invalid props file: " + s)
 
         self._file = str(s)
-        self._name = os.path.basename(self._file)[11] # omit '.properties'
+        print("__init__: ", s)
+        self._name = "the local server with `-profile {0}`".format(self._file)
 
     def get_name(self):
         return self._name
@@ -49,6 +51,9 @@ class LocalServer(ServerTarget):
 
     def get_http_port(self):
         return self._port
+
+    def get_hypertext_protocol(self):
+        return 'http'
 
     def get_mysql_port(self):
         return 3306

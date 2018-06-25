@@ -312,7 +312,6 @@ def get_local_remote_ip(printer=StatusPrinter()):
 
 def probe_network(selector=lambda x : x, printer=StatusPrinter()):
 
-    printer("Probing Network From Both Sides")
     with Indent(printer):
         local_remote = get_local_remote_ip()
 

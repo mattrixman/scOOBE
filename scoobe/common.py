@@ -27,6 +27,11 @@ class ServerTarget(ABC):
     def get_http_port(self):
         pass
 
+    # "http" or "https"
+    @abstractmethod
+    def get_hypertext_protocol(self):
+        pass
+
     @abstractmethod
     def get_mysql_port(self):
         pass

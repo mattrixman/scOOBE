@@ -24,7 +24,7 @@ setup(name='scoobe',
           # if the device is rebooting, wait for it to be ready for further commands
           'wait_ready = scoobe.device:wait_ready',
 
-          # given a device serial number, point it at a server (whose details are specified in ~/.ssh/config)
+          # point the connected device at a server
           'target_device = scoobe.device:set_target',
 
           # print the device's serial number
@@ -67,6 +67,9 @@ setup(name='scoobe',
           # attach the specified device to the specified merchant (modifies device reseller if necessary)
           'provision_device = scoobe.server:provision',
 
+          # create a new merchant and provision this device to it
+          'provision_new_device = scoobe.server:provision_new',
+
           # clear the ACCEPTED_BILLING_TERMS flag
           'unaccept_terms= scoobe.server:unaccept',
 
@@ -82,5 +85,10 @@ setup(name='scoobe',
           # refresh the activation code for a device if it is stale
           'refresh_activation = scoobe.server:print_refresh_activation',
 
+          # create a new merchant
+          'new_merchant = scoobe.server:print_new_merchant',
+
+          # create a new merchant
+          'internal_login = scoobe.server:print_cookie',
 
           ]})

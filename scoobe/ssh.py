@@ -133,6 +133,9 @@ class SshConfig(ServerTarget):
     def get_db_name(self):
         return 'meta'
 
+    def get_hypertext_protocol(self):
+        return 'https'
+
     def get_admin_hostname(self):
         self.verify_admin_port()
         return 'localhost'
