@@ -6,7 +6,7 @@ import json
 import ifaddr
 import ipaddress
 from scoobe.common import StatusPrinter, Indent
-from argparse import ArgumentParser
+from scoobe.cli import parse, Parsable as Arg
 from collections import namedtuple
 from sortedcontainers import SortedDict
 from enum import Enum
@@ -55,15 +55,6 @@ def wait_ready(printer=StatusPrinter()):
         sleep(1)
         printer(' ... ready')
 
-class CloudTarget(Enum):
-    prod_us = 'prod_us'
-    prod_eu = 'prod_eu'
-    dev = 'dev'
-    local = 'local'
-
-    def __str__(self):
-        return self.value
-
 def master_clear():
     printer = StatusPrinter(indent=0)
     printer("Clearing Device")
@@ -76,15 +67,15 @@ def master_clear():
     sleep(d.get_shutdown_delay())
 
 def set_target():
-    parser = ArgumentParser()
-    parser.add_argument("target", type=CloudTarget, choices=list(CloudTarget))
-    parser.add_argument("url", type=str)
-    args=parser.parse_args()
+    args = parse(Arg.target_type, Arg.ip)
 
     printer = StatusPrinter(indent=0)
-    printer("Targeting attached device to {} {}".format(args.target, args.url))
+    printer("Targeting attached device to {} {}".format(args.targettype, args.ip))
+
+    import IPython
+    IPython.embed()
     with Indent(printer):
-        get_connected_device(printer=printer).set_target(args.target, args.url)
+        get_connected_device(printer=printer).set_target(args.targettype, args.ip)
 
 def get_connected_device(printer=StatusPrinter()):
     wait_ready(printer)

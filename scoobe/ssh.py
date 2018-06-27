@@ -125,7 +125,7 @@ class SshConfig(ServerTarget):
         return self.hostname
 
     def get_http_port(self):
-        return 80
+        return 443
 
     def get_mysql_port(self):
         return self._mysql_port

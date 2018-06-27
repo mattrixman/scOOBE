@@ -1,5 +1,6 @@
 import sys
 from textwrap import indent
+from enum import Enum
 from abc import ABC, abstractmethod
 from collections import namedtuple
 
@@ -95,24 +96,3 @@ class Indent:
 
     def __exit__(self, type, value, traceback):
         self.printer.indent -= 4
-
-def print_request(printer, endpoint, headers, data):
-    printer("[Http Request] " + endpoint)
-    with Indent(printer):
-        printer("headers:", end='')
-        printer(headers)
-        printer("data:", end='')
-        printer(data)
-
-def print_response(printer, response):
-    printer("[Http Response]")
-    with Indent(printer):
-        printer("code:", end='')
-        printer(response.status_code)
-        printer("reason:", end='')
-        printer(response.reason)
-        printer("content:", end='')
-        if isinstance(response.content, str):
-            printer(response.content)
-        else:
-            printer(response.content.decode(response.encoding))
