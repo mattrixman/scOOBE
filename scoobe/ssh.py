@@ -70,16 +70,19 @@ class SshConfig(ServerTarget):
             Forward = namedtuple('Forward', 'local_port remote_port')
 
             m = re.match(r'(\d*) .*:(\d+).*', forward_str)
+
             if m:
                 return Forward(int(m.group(1)), int(m.group(2)))
             else:
                 return None
 
         # parse them all
+
         forwards = [x for x in map(read_ports, config_section['localforward']) if x is not None]
 
         # find the mysql port
         mysql =  next(filter(lambda x: x.remote_port == 3306, forwards), None)
+
 
         if mysql:
             printer("Locally forwarded mysql port: {}".format(mysql))
