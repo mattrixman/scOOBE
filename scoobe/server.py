@@ -3,8 +3,7 @@ import os
 import re
 import json
 import textwrap
-import argparse
-import xml.etree.ElementTree as ET
+import datetime
 from collections import namedtuple
 from argparse import ArgumentParser
 from scoobe.cli import parse, Parsable as Arg
@@ -66,10 +65,13 @@ def internal_auth(target,
 
     data = creds
 
+    # first try with with a nonsense user
     response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
 
     if response.status_code == 200:
         return response.headers['set-cookie']
+
+    # if that fails, use a real one
     elif response.status_code == 401:
         printer("{} has cloverDevAuth unset, looking for real credentials".format(target.get_name()))
 
@@ -538,31 +540,175 @@ def provision():
         printer('Error')
         sys.exit(20)
 
-def create_merchant():
+def create_merchant(target, reseller, printer=StatusPrinter()):
+
+    unique_str = str(datetime.datetime.utcnow().strftime('%s'))
+    merchant_str = "merchant_" + unique_str
+
 
     base_message = textwrap.dedent(
     """
-    <XMLRequest>
-        <RequestAction>Create</RequestAction>
-        <MerchantDetail>
-            <MerchantNumber></MerchantNumber>
-            <TimeZone>Pacific/Samoa</TimeZone>
-            <ABAAccountNumber></ABAAccountNumber>
-            <ACHBankID></ACHBankID>
-            <DaylightSavings>N</DaylightSavings>
-            <SeasonalInd>N</SeasonalInd>
-            <ExternalMerchantInd>N</ExternalMerchantInd>
-            <DynamicDBA>N</DynamicDBA>
-            <TaxExemptInd>N</TaxExemptInd>
-            <ValueLinkInd>N</ValueLinkInd>
-        </MerchantDetail>
-        <ShipAddress></ShipAddress>
+    <XMLRequest xmlns="http://soap.1dc.com/schemas/class/Crimson">
+      <RequestAction>Create</RequestAction>
+      <MerchantDetail>
+	<CloverID></CloverID>
+	<MerchantNumber>444555777</MerchantNumber>
+	<BEMerchantNumber>999888777</BEMerchantNumber>
+	<Platform>N</Platform>
+	<Sys-Prin>/</Sys-Prin>
+	<DBAName>{}</DBAName>
+	<LegalName>{}</LegalName>
+	<Address1>1307 Ben 123RD, x</Address1>
+	<Address2 />
+	<City>Austine</City>
+	<State>TX</State>
+	<Zip>78751</Zip>
+	<Country>US</Country>
+	<PhoneNumber>6316837808</PhoneNumber>
+	<Email>{}@foo.com</Email>
+	<Contact>Ben M LAST</Contact>
+	<BankMarker>123</BankMarker>
+	<MCCCode>5999</MCCCode>
+	<IndustryCode>5999</IndustryCode>
+	<Currency>USD</Currency>
+	<TAEncryptionType>0001</TAEncryptionType>
+	<GroupID>10001</GroupID>
+	<TimeZone>CST</TimeZone>
+	<SupportPhone>8003463315</SupportPhone>
+	<ABAAccountNumber>000000053000196</ABAAccountNumber>
+	<DDAAccountNumber>123444449000</DDAAccountNumber>
+	<Business>177123456994</Business>
+	   <Bank>846980100883</Bank>
+	<Agent>1</Agent>
+	<Chain>846217707000</Chain>
+	<Corp />
+	<Chain>177208700993</Chain>
+	<ACHBankID>ACH123</ACHBankID>
+	<AccountStatus>A1</AccountStatus>
+	<BillToName>B2N</BillToName>
+	<Store>100</Store>
+	<DaylightSavings>Y</DaylightSavings>
+	<SeasonalInd>Y</SeasonalInd>
+	<TransArmorKey>11</TransArmorKey>
+	<CreditLimit>1001.11</CreditLimit>
+	<AuthLimit>1002.23</AuthLimit>
+	<SaleLimit>1003.33</SaleLimit>
+	<ExternalMerchantInd>Y</ExternalMerchantInd>
+	<DynamicDBA>Y</DynamicDBA>
+	<MerchFNSNum>FNS123</MerchFNSNum>
+	<RelationshipManager>RM</RelationshipManager>
+	<TaxExemptInd>Y</TaxExemptInd>
+	<Salesman>Joe</Salesman>
+	<ValueLinkInd>Y</ValueLinkInd>
+	<ValueLinkMID>VL1</ValueLinkMID>
+	<AltValueLinkMID>AV2</AltValueLinkMID>
+	<ReceiptDBA>R123</ReceiptDBA>
+	<ParentMerchantID>100</ParentMerchantID>
+	<MultiMerchantType>C</MultiMerchantType>
+	<MerchantData>md</MerchantData>
+      </MerchantDetail>
+      <ProgramExpressList>
+	<ProgramExpress>
+	  <ProgramCode>1234</ProgramCode>
+	  <ProgramCodeDescription>pcd1</ProgramCodeDescription>
+	  <Key>123</Key>
+	  <KeyDescription>kd123</KeyDescription>
+	  <Value>v1</Value>
+	  <ValueDescription>vd</ValueDescription>
+	</ProgramExpress>
+      </ProgramExpressList>
+      <CardTypes>
+	<CardType CardName="MASTERCARD">
+	  <SENUMBER>177208700993</SENUMBER>
+	</CardType>
+	<CardType CardName="VISA">
+	  <SENUMBER>177208700993</SENUMBER>
+	</CardType>
+	<CardType CardName="EDS">
+	  <SENUMBER>000000084024335</SENUMBER>
+	</CardType>
+	<CardType CardName="PURCHASE CARD">
+	  <SENUMBER>000000989898989</SENUMBER>
+	</CardType>
+      </CardTypes>
+      <DeviceList>
+	<Device productType="1086">
+	  <DeviceType>Software</DeviceType>
+	  <ProductName>Clover Software RC</ProductName>
+	  <TerminalID>1282081</TerminalID>
+	  <ProcessingNetwork>Nashville</ProcessingNetwork>
+	  <DatawireID />
+	  <AutoCloseHour>5</AutoCloseHour>
+	  <CloseMethod>A</CloseMethod>
+	  <SerialNumber>123123123</SerialNumber>
+	  <DebitKeyCode>550</DebitKeyCode>
+	  <CloverVersion>Basic</CloverVersion>
+	</Device>
+	    <Device productType="vsgl">
+	  <DeviceType>Software</DeviceType>
+	  <ProductName>Clover Software RC</ProductName>
+	  <TerminalID>1111</TerminalID>
+	  <ProcessingNetwork>Nashville</ProcessingNetwork>
+	  <DatawireID />
+	  <CloseMethod>A</CloseMethod>
+	  <SerialNumber>123123123</SerialNumber>
+	  <DebitKeyCode>550</DebitKeyCode>
+	  <CloverVersion>Basic</CloverVersion>
+	</Device>
+	<Device productType="1297">
+	  <DeviceType>Tablet</DeviceType>
+	  <ProductName>Clover Station 2018</ProductName>
+	  <EquipmentNumber>777</EquipmentNumber>
+	  <Status>Active</Status>
+	  <TerminalID/>
+	  <ProcessingNetwork>Nashville</ProcessingNetwork>
+	  <DatawireID />
+	  <CloseMethod>A</CloseMethod>
+	  <CloverVersion>Basic</CloverVersion>
+	</Device>
+	<Device productType="AOAN"><DeviceType>Tablet</DeviceType><ProductName>Clover Station</ProductName>
+		   <TerminalID/><ProcessingNetwork>Nashville</ProcessingNetwork><DatawireID/><AutoCloseHour/>
+		   <CloseMethod/><SerialNumber/><CloverVersion/><Status>Active</Status><BundleIndicator>P03</BundleIndicator>
+		   <EquipmentNumber>
+		   10455215720011</EquipmentNumber><SerialNumber>C010UQ63567777</SerialNumber><BusinessType>Z</BusinessType><TransArmorInd/><ForceCloseTime>24
+		   </ForceCloseTime></Device>
+      </DeviceList>
+      <ShipAddress>
+	<ShipName>Ben IVR TEST 7</ShipName>
+	<ShipAttention>PINA DAVE</ShipAttention>
+	<ShipAddress1>Ben WHITMAN RD</ShipAddress1>
+	<ShipAddress2 />
+	<ShipCity>MELVILLE</ShipCity>
+	<ShipState>NY</ShipState>
+	<ShipZip>11747</ShipZip>
+      </ShipAddress>
     </XMLRequest>
     """)
-    return base_message
+
+
+    #endpoint = '{}://{}/cos/v1/partner/fdc/create_merchant'.format(
+    endpoint = 'http://localhost:8080/cos/v1/partner/fdc/create_merchant'.format(
+                target.get_hypertext_protocol(),
+                target.get_hostname() + ":" + str(target.get_http_port()))
+
+    headers = { 'Content-Type' : 'text/plain',
+                      'Accept' : '*/*',
+                      'Cookie' : internal_auth(target, printer=printer)}
+
+    data = base_message
+
+    response = post(endpoint, headers, data, printer=printer)
+
+    return response
 
 def print_new_merchant():
-    print(create_merchant())
+
+    args = parse(Arg.target, Arg.reseller)
+    printer = StatusPrinter(indent=0)
+    printer("Creating New Merchant")
+    with Indent(printer):
+        uid = create_merchant(args.target, args.reseller, printer=printer)
+
 
 
 # provision device for new merchant

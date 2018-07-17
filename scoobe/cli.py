@@ -125,13 +125,16 @@ class TargetType(_IParsable):
     def get_val(self, parser):
         return getattr(parser, field_name(self)).value
 
-class IP(_IParsable):
+class Server(_IParsable):
 
     def preparse(self, parser):
-        parser.add_argument(field_name(self), type=str, help="An IP Address")
+        parser.add_argument(field_name(self), type=str, help="An IP Address "
+                                                             "or the hostname of a clover server")
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
+        if "clover.com" in value:
+            return value
         if not re.match(r'^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$', value):
            raise ValueError("{} doesn't look like an ip address".format(value))
         return value
@@ -144,7 +147,7 @@ class Parsable(Enum):
     merchant = Merchant
     reseller = Reseller
     target_type = TargetType
-    ip = IP
+    server = Server
 
 # given a list of parsables, return a namedtuple containing their results
 def parse(*parsables):

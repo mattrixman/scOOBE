@@ -67,15 +67,12 @@ def master_clear():
     sleep(d.get_shutdown_delay())
 
 def set_target():
-    args = parse(Arg.target_type, Arg.ip)
+    args = parse(Arg.target_type, Arg.server)
 
     printer = StatusPrinter(indent=0)
-    printer("Targeting attached device to {} {}".format(args.targettype, args.ip))
-
-    import IPython
-    IPython.embed()
+    printer("Targeting attached device to {} {}".format(args.targettype, args.server))
     with Indent(printer):
-        get_connected_device(printer=printer).set_target(args.targettype, args.ip)
+        get_connected_device(printer=printer).set_target(args.targettype, args.server)
 
 def get_connected_device(printer=StatusPrinter()):
     wait_ready(printer)
