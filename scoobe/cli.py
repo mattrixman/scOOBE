@@ -128,14 +128,18 @@ class TargetType(_IParsable):
 class Server(_IParsable):
 
     def preparse(self, parser):
-        parser.add_argument(field_name(self), type=str, help="An IP Address "
-                                                             "or the hostname of a clover server")
+        parser.add_argument(field_name(self), type=str, help=\
+                textwrap.dedent(
+                '''
+                An IP Address (ex: 192.168.1.2)
+                or the hostname of a clover server (ex: dev1.dev.clover.com)
+                '''))
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
         if "clover.com" in value:
             return value
-        if not re.match(r'^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$', value):
+        if not re.match(r'^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]*)?$', value):
            raise ValueError("{} doesn't look like an ip address".format(value))
         return value
 

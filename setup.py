@@ -1,6 +1,6 @@
 from setuptools import setup
 setup(name='scoobe',
-      version='0.1.0.dev1',
+      version='0.2.0.dev1',
       description='commands for manipulating a device through oobe',
       url='https://github.com/mattrixman/scoobe',
       author='Matt Rixman',
@@ -33,8 +33,8 @@ setup(name='scoobe',
           # print the device's cpu id
           'device_cpuid = scoobe.device:print_cpuid',
 
-          # find an IP address pair, each of which can ping each other, one goes with a network interface on the device
-          # the other that goes with localhost
+          # find an IP address pair, each of which can ping the other. One goes with a network interface on the device,
+          # the other that goes with whichever network interface on localhost routes to the device.
           'probe_network = scoobe.device:probe_network',
 
           # probe the network (like above) but only print the local ip
@@ -67,7 +67,7 @@ setup(name='scoobe',
           # attach the specified device to the specified merchant (modifies device reseller if necessary)
           'provision_device = scoobe.server:provision',
 
-          # create a new merchant and provision this device to it
+          # create a new merchant and provision this device to it (under construction)
           'provision_new_device = scoobe.server:provision_new',
 
           # clear the ACCEPTED_BILLING_TERMS flag
@@ -88,7 +88,7 @@ setup(name='scoobe',
           # create a new merchant (under construction)
           'new_merchant = scoobe.server:print_new_merchant',
 
-          # get a session cookie (requires the user to initialize some environment varibles)
+          # get a session cookie (asks the user to initialize some environment varibles if they are not set)
           'internal_login = scoobe.server:print_cookie',
 
           ]})

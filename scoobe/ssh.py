@@ -16,7 +16,6 @@ def port_open(port):
     sock.close()
     return result == 0
 
-
 # encapsulates the local ssh config entry for a particular host
 # makes some assumptions about the remote configuration (default passwords, etc)
 class SshConfig(ServerTarget):
@@ -76,9 +75,12 @@ class SshConfig(ServerTarget):
             else:
                 return None
 
-        # parse them all
+        # in the event of a lone config section, still store it as a list
+        localforward = config_section['localforward']
+        if type(localforward) == str:
+            localforward = [localforward]
 
-        forwards = [x for x in map(read_ports, config_section['localforward']) if x is not None]
+        forwards = [x for x in map(read_ports, localforward) if x is not None]
 
         # find the mysql port
         mysql =  next(filter(lambda x: x.remote_port == 3306, forwards), None)
@@ -114,7 +116,10 @@ class SshConfig(ServerTarget):
         if admin is not None:
             validate(admin.local_port)
 
-        return Ports(mysql.local_port, admin.local_port)
+        if admin:
+            return Ports(mysql.local_port, admin.local_port)
+        else:
+            return Ports(mysql.local_port, None)
 
     def verify_admin_port(self):
         if not hasattr(self._admin_http_port):
