@@ -360,7 +360,7 @@ def describe_increment_last_activation_code(target, serial, printer=StatusPrinte
 
 def print_refresh_activation():
 
-    args = Arg.parse(Args.serial, Args.target)
+    args = parse(Arg.serial, Arg.target)
     printer = StatusPrinter(indent=0)
 
     printer("Checking Last Activation Code")
@@ -381,7 +381,7 @@ def print_refresh_activation():
 
 def unaccept():
 
-    args = Arg.parse(Args.serial, Args.target)
+    args = parse(Arg.serial, Arg.target)
     printer = StatusPrinter(indent=0)
     printer("Clearing Terms Acceptance")
 
