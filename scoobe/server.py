@@ -477,7 +477,7 @@ def deprovision():
 
         headers = { 'Authorization' : 'Bearer ' + auth_token }
 
-        response = put(endpoint, headers, printer=printer)
+        response = put(endpoint, headers, printer=printer, data={})
 
     # TODO: server/scripts/disassociate_device.py also DELETEs '/v3/resellers/{rId}/devices/{serial}'
     # maybe this function should do that also?
@@ -491,7 +491,7 @@ def deprovision():
 # provision device for merchant
 def provision():
 
-    args = parse(Arg.serial, Arg.target, Arg.merchant)
+    args = parse(Arg.serial, Arg.target, Arg.merchant, Arg.cpuid)
     printer = StatusPrinter(indent=0)
     printer("Provisioning Device")
     with Indent(printer):
@@ -513,7 +513,7 @@ def provision():
 
         endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.target.get_hypertext_protocol(),
-                args.target.get_hostname() + ":" + args.target.get_http_port(),
+                args.target.get_hostname() + ":" + str(args.target.get_http_port()),
                 args.merchant,
                 args.serial)
 
