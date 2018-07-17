@@ -2,8 +2,9 @@
 
 scoobe snacs consists of [several commands](../setup.py) which--once installed, will be available at the command line.
 You may want to conser a [venv install](venv_install.md) if:
-    - You'd prefer to control when the scOOBE suite of commands id available
-    - You expect to be making changes to scOOBE itself
+
+  - You'd prefer to control when the scOOBE suite of commands id available
+  - You expect to be making changes to scOOBE itself
 
 If you don't mind scOOBE being installed system-wide, then you're in the right place
 

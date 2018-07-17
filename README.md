@@ -79,8 +79,8 @@ If you're running server locally, instead of the ssh config name, provide the pa
 
 See either:
 
-    - [system install](docs/system_install.md) (recommended if you don't plan to modify scOOBE)
-    - [venv install](docs/venv_install.md) (recommended if you do)
+- [system install](docs/system_install.md) (recommended if you don't plan to modify scOOBE)
+- [venv install](docs/venv_install.md) (recommended if you do)
 
 ## Example Session
 
