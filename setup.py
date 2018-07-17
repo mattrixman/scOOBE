@@ -85,10 +85,10 @@ setup(name='scoobe',
           # refresh the activation code for a device if it is stale
           'refresh_activation = scoobe.server:print_refresh_activation',
 
-          # create a new merchant
+          # create a new merchant (under construction)
           'new_merchant = scoobe.server:print_new_merchant',
 
-          # create a new merchant
+          # get a session cookie (requires the user to initialize some environment varibles)
           'internal_login = scoobe.server:print_cookie',
 
           ]})
