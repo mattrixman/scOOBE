@@ -192,6 +192,7 @@ Notice that the status messages are written to STERR, but the requested data is 
 | :-- | :-- |
 | [v0.0](https://github.com/mattrixman/scOOBE/releases/tag/v0.0) | Initial Release |
 | [v0.1](https://github.com/mattrixman/scOOBE/releases/tag/v0.1) | Local Server, Reseller Support, System 2018 |
+| [v0.2](https://github.com/mattrixman/scOOBE/releases/tag/v0.2) | Session Cookies, CLI arg refactor, IP Discovery |
 
 ## Feedback
 
