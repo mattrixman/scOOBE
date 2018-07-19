@@ -24,14 +24,14 @@ def print_serial():
     printer = StatusPrinter(indent=0)
     printer("Getting device serial")
     with Indent(printer):
-        serial = get_connected_device(printer=printer).get_info()['serial']
+        serial = get_connected_device(printer=printer).serial
     print(serial)
 
 def print_cpuid():
     printer = StatusPrinter(indent=0)
     printer("Getting device cpuid")
     with Indent(printer):
-        cpuid = get_connected_device().get_info()['cpuid']
+        cpuid = get_connected_device().cpuid
     print(cpuid)
 
 def ready():
