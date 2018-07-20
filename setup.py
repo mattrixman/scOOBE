@@ -33,8 +33,9 @@ setup(name='scoobe',
           # print the device's cpu id
           'device_cpuid = scoobe.device:print_cpuid',
 
-          # find an IP address pair, each of which can ping the other. One goes with a network interface on the device,
-          # the other that goes with whichever network interface on localhost routes to the device.
+          # find an IP address pair that can ping the other.
+          # One goes with a network interface on the device,
+          # the other that goes with a network interface on localhost.
           'probe_network = scoobe.device:probe_network',
 
           # probe the network (like above) but only print the local ip
@@ -44,10 +45,10 @@ setup(name='scoobe',
           'device_ip = scoobe.device:print_device_ip',
 
           # given a serial number and a server, see which merchant the server thinks the device goes with
-          'device_merchant = scoobe.server:print_merchant',
+          'device_merchant = scoobe.server:print_device_merchant',
 
-          # given a merchant uuid, print the merchant id that goes with it
-          'get_merchant_id = scoobe.server:print_merchant_id',
+          # given a merchant uuid or a merchant id, print the other
+          'merchant = scoobe.server:print_merchant',
 
           # given a serial number and a server, see which reseller the server thinks the device goes with
           'device_reseller = scoobe.server:print_device_reseller',
@@ -70,6 +71,8 @@ setup(name='scoobe',
           # create a new merchant and provision this device to it (under construction)
           'provision_new_device = scoobe.server:provision_new',
 
+          'terms_accepted= scoobe.server:print_acceptedness',
+
           # clear the ACCEPTED_BILLING_TERMS flag
           'unaccept_terms= scoobe.server:unaccept',
 
@@ -90,5 +93,8 @@ setup(name='scoobe',
 
           # get a session cookie (asks the user to initialize some environment varibles if they are not set)
           'internal_login = scoobe.server:print_cookie',
+
+          # describe the resellers on this server
+          'resellers = scoobe.server:print_resellers',
 
           ]})

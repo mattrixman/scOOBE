@@ -4,13 +4,15 @@ import re
 import json
 import textwrap
 import datetime
-from collections import namedtuple
+import pprint as pp
+from collections import namedtuple, OrderedDict
+import xml.etree.ElementTree as ET
 from argparse import ArgumentParser
-from scoobe.cli import parse, Parsable as Arg
+from scoobe.cli import parse, print_or_warn, Parsable as Arg
 from scoobe.common import StatusPrinter, Indent
 from scoobe.http import get, put, post
 from scoobe.ssh import SshConfig, UserPass
-from scoobe.mysql import Query
+from scoobe.mysql import Query, Feedback
 from scoobe.properties import LocalServer
 
 def get_creds(printer=StatusPrinter()):
@@ -99,25 +101,79 @@ def print_cookie():
         print(cookie)
 
 
-Merchant = namedtuple('Merchant', 'id uuid')
-def get_merchant(serial, target, printer=StatusPrinter()):
+
+def is_uuid(string):
+    if re.match(r'[A-Za-z0-9]{13}', str(string)):
+        return True
+    return False
+
+# given a merchant id or a merchant uuid, get both
+def get_merchant(merchant, target, printer=StatusPrinter()):
+
+    class Merchant:
+        def __init__(self, row):
+            self.id = row['id']
+            self.uuid = row['uuid']
+
+        def __str__(self):
+            return json.dumps(self.__dict__)
+
+    if is_uuid(merchant):
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id, uuid
+                FROM merchant
+                WHERE uuid = '{}';
+                """.format(merchant))
+    else:
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id, uuid
+                FROM merchant
+                WHERE id = {};
+                """.format(merchant))
+
+    merchant = q.execute(Feedback.OneRow, lambda row : Merchant(row), printer=printer)
+
+    if not merchant:
+        printer("this merchant does not exist on {}".format(target.get_name()))
+
+    return merchant
+
+def print_merchant():
+
+    args = parse(Arg.merchant, Arg.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        printer("Finding merchant {}'s identifiers according to {}".format(args.merchant, args.target.get_name()))
+        with Indent(printer):
+            merchant = get_merchant(args.merchant, args.target, printer=printer)
+        print(merchant)
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+# given a serial number and a server, get the merchant associated with that serial number on that server
+def get_device_merchant(serial, target, printer=StatusPrinter()):
 
     q = Query(target, 'metaRO', 'test321',
             """
-            SELECT id, uuid
-            FROM merchant
-            WHERE id = (SELECT merchant_id
-                        FROM device_provision
-                        WHERE serial_number = '{}');
+            SELECT merchant_id
+            FROM device_provision
+            WHERE serial_number = '{}';
             """.format(serial))
 
-    q.on_empty("this device is not associated with a merchant on {}".format(target.get_name()))
+    merchant_id = q.execute(Feedback.OneRow, lambda row : row['merchant_id'], printer=printer)
 
-    return q.get_from_first_row(
-            lambda row: Merchant(row['id'], row['uuid'].decode('utf-8')),
-            printer=printer)
+    if not merchant_id:
+        printer("this device is not associated with a merchant on {}".format(target.get_name()))
 
-def print_merchant():
+    return merchant_id
+
+
+def print_device_merchant():
 
     args = parse(Arg.serial, Arg.target)
     printer = StatusPrinter(indent=0)
@@ -125,30 +181,76 @@ def print_merchant():
     try:
         printer("Finding {}'s merchant according to {}".format(args.serial, args.target.get_name()))
         with Indent(printer):
-            merchant = get_merchant(args.serial, args.target, printer=printer)
-        print(json.dumps(merchant._asdict()))
+            merchant_id = get_device_merchant(args.serial, args.target, printer=printer)
+
+        printer("Finding merchant {}'s UUID according to {}".format(merchant_id, args.target.get_name()))
+        with Indent(printer):
+            merchant = get_merchant(merchant_id, args.target, printer=printer)
+        print(merchant)
+
     except ValueError as ex:
         printer(str(ex))
         sys.exit(30)
 
+def get_resellers(target, printer=StatusPrinter()):
+
+    q = Query(target, 'metaRO', 'test321',
+            """
+            SELECT id, uuid, name, parent_id FROM reseller order by id;
+            """)
+
+    def as_dict(x):
+        return {x['id'] : { 'uuid' : x['uuid'], 'name' : x['name'], 'parent_id' : x['parent_id']}}
+
+
+    row_dicts = q.execute(Feedback.ManyRows, as_dict, print_transform = True, printer=printer)
+
+    reseller_dict = {}
+    for row_dict in row_dicts:
+        reseller_dict.update(row_dict)
+
+    return reseller_dict
+
+def print_resellers():
+
+    args = parse(Arg.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Getting resellers according to {}".format(args.target.get_name()))
+    with Indent(printer):
+        resellers_dict = get_resellers(args.target, printer=printer)
+
+    output = json.dumps(resellers_dict)
+
+    print_or_warn(output, max_length=500)
+
 # returns the merchant currently associated with the specified device
 Reseller = namedtuple('Reseller', 'id uuid name')
+
+class Reseller:
+    def __init__(self, row):
+        self.id = row['id']
+        self.uuid = row['uuid']
+        self.name = row['name']
+        self.parent_id = row['parent_id']
+
 def get_device_reseller(serial, target, printer=StatusPrinter()):
 
     q = Query(target, 'metaRO', 'test321',
             """
-            SELECT id, uuid, name
+            SELECT id, uuid, name, parent_id
             FROM reseller
             WHERE id = (SELECT reseller_id
                         FROM device_provision
                         WHERE serial_number = '{}');
             """.format(serial))
 
-    q.on_empty("this device is not associated with a reseller according to {}".format(target.get_name()))
+    reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
 
-    return q.get_from_first_row(
-            lambda row: Reseller(row['id'], row['uuid'].decode('utf-8'), row['name'].decode('utf-8')),
-            printer=printer)
+    if not reseller:
+        printer("This device is not associated with a reseller according to {}".format(target.get_name()))
+
+    return reseller
 
 def print_device_reseller():
 
@@ -158,8 +260,9 @@ def print_device_reseller():
     try:
         printer("Finding {}'s reseller according to {}".format(args.serial, args.target.get_name()))
         with Indent(printer):
-            merchant = get_device_reseller(args.serial, args.target, printer=printer)
-        print(json.dumps(merchant._asdict()))
+            reseller = get_device_reseller(args.serial, args.target, printer=printer)
+        if reseller:
+            print(json.dumps(reseller.__dict__))
     except ValueError as ex:
         printer(str(ex))
         sys.exit(90)
@@ -171,6 +274,9 @@ def describe_set_device_reseller(serial, target, target_reseller_id, printer=Sta
     printer("Checking the device's reseller")
     with Indent(printer):
         current_reseller = get_device_reseller(serial, target, printer)
+
+    if not current_reseller:
+        return SetResult(False, "Could not find reseller")
 
     # don't modify if desired value is already set
     if int(current_reseller.id) == int(target_reseller_id):
@@ -189,9 +295,10 @@ def describe_set_device_reseller(serial, target, target_reseller_id, printer=Sta
                     WHERE serial_number = '{}';
                     """.format(target_reseller_id, serial))
 
-            rows_changed = q.run_get_rows_changed(printer=printer)
+            rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
+
             if rows_changed == 1:
-                return SetResult(False, "NOTICE: the attached device's reseller has changed from {} to {}".format(
+                return SetResult(True, "NOTICE: the attached device's reseller has changed from {} to {}".format(
                                         current_reseller.id, target_reseller_id))
             else:
                 raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
@@ -210,29 +317,31 @@ def get_merchant_reseller(merchant_uuid, target, printer=StatusPrinter()):
 
     q = Query(target, 'metaRO', 'test321',
             """
-            SELECT id, uuid, name
+            SELECT id, uuid, name, parent_id
             FROM reseller
             WHERE id = (SELECT reseller_id
                         FROM merchant
                         WHERE uuid = '{}');
             """.format(merchant_uuid))
 
-    q.on_empty("this device is not associated with a reseller on {}".format(target.get_name()))
+    reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
 
-    return q.get_from_first_row(
-            lambda row: Reseller(row['id'], row['uuid'].decode('utf-8'), row['name'].decode('utf-8')),
-            printer=printer)
+    if not reseller:
+        printer("This merchant is not associated with a reseller according to {}".format(target.get_name()))
+
+    return reseller
 
 def print_merchant_reseller():
 
-    args = parse(Arg.serial, Arg.target)
+    args = parse(Arg.merchant, Arg.target)
     printer = StatusPrinter(indent=0)
 
     try:
         printer("Finding {}'s reseller according to {}".format(args.merchant, args.target.get_name()))
         with Indent(printer):
             reseller = get_merchant_reseller(args.merchant, args.target, printer=printer)
-        print(json.dumps(reseller._asdict()))
+        if reseller:
+            print(json.dumps(reseller.__dict__))
     except ValueError as ex:
         printer(str(ex))
         sys.exit(30)
@@ -244,10 +353,13 @@ def get_activation_code(target, serial, printer=StatusPrinter()):
             SELECT activation_code FROM device_provision WHERE serial_number = '{}';
             """.format(serial))
 
-    q.on_empty("This device is not known to {}".format(target.get_name()))
 
-    return int(q.get_from_first_row(lambda row: row['activation_code'].decode('utf-8'),
-                                    printer=printer))
+    code = q.execute(Feedback.OneRow, lambda row: row['activation_code'], printer=printer)
+
+    if not code:
+        printer("This device is not known to {}".format(target.get_name()))
+
+    return code
 
 def print_activation_code():
 
@@ -258,46 +370,42 @@ def print_activation_code():
     with Indent(printer):
         print(get_activation_code(args.target, args.serial, printer=printer))
 
-def get_acceptedness(target, serial, printer=StatusPrinter()):
+def get_acceptedness(target, merchant_id, printer=StatusPrinter()):
 
     q = Query(target, 'metaRO', 'test321',
             """
             SELECT value
             FROM setting
-            WHERE merchant_id IN
-                    (SELECT merchant_id
-                     FROM device_provision
-                     WHERE serial_number = '{}')
-                AND
-                    name = 'ACCEPTED_BILLING_TERMS';
-             """.format(serial))
+            WHERE merchant_id = {} AND name = 'ACCEPTED_BILLING_TERMS';
+             """.format(merchant_id))
 
-    q.on_empty("this device is not associated with a merchant on {}".format(target.get_name()))
+    acceptedness_row = q.execute(Feedback.OneRow, lambda row: row['value'], printer=printer)
 
-    try:
-        value = q.get_from_first_row(lambda row: row['value'],
-                printer=printer)
-    except ValueError as ex:
-        printer(str(ex))
-        sys.exit(40)
+    if not acceptedness_row:
+        printer("This device is not associated with a merchant on {}".format(target.get_name()))
 
-    if value is None:
-        return None
-    else:
-        return value.decode('utf-8')
+    return acceptedness_row
 
-def set_acceptedness(target, serial, value, printer=StatusPrinter()):
+def print_acceptedness():
+
+    args = parse(Arg.merchant, Arg.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Checking Acceptedness Code")
+    with Indent(printer):
+        merchant_id = get_merchant(args.merchant, args.target)['id']
+
+        acceptedness = get_acceptedness(args.target, merchant_id, printer=printer)
+
+    print(acceptedness)
+
+def set_acceptedness(target, merchant_id, value, printer=StatusPrinter()):
 
     q = Query(target, 'metaRW', 'test789',
             """
             UPDATE setting SET value = {}
-            WHERE merchant_id IN
-                    (SELECT merchant_id
-                     FROM device_provision
-                     WHERE serial_number = '{}')
-                AND
-                    name = 'ACCEPTED_BILLING_TERMS';
-             """.format(value, serial))
+            WHERE merchant_id = {} AND name = 'ACCEPTED_BILLING_TERMS';
+             """.format(value, merchant_id, serial))
 
     rows_changed = q.run_get_rows_changed(printer=printer)
     if rows_changed != 1:
@@ -311,7 +419,8 @@ def set_activation_code(target, serial, value, printer=StatusPrinter()):
             WHERE serial_number = '{}';
              """.format(value, serial))
 
-    rows_changed = q.run_get_rows_changed(printer=printer)
+    rows_changes = q.execute(Feedback.ChangeCount, printer=printer)
+
     if rows_changed != 1:
         raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
 
@@ -340,8 +449,14 @@ def get_last_activation_code(target, serial, printer=StatusPrinter()):
 
     q.on_empty("This device is not known to {}".format(target.get_name()))
 
-    return int(q.get_from_first_row(lambda row: row['last_activation_code'].decode('utf-8'),
-                                    printer=printer))
+    def get(row):
+        val = row['last_activation_code']
+        if val:
+            return int(val)
+        else:
+            return None
+
+    return q.get_from_first_row(get, printer=printer)
 
 def describe_increment_last_activation_code(target, serial, printer=StatusPrinter()):
 
@@ -381,7 +496,7 @@ def print_refresh_activation():
 
 def unaccept():
 
-    args = parse(Arg.serial, Arg.target)
+    args = parse(Arg.merchant, Arg.target)
     printer = StatusPrinter(indent=0)
     printer("Clearing Terms Acceptance")
 
@@ -393,25 +508,25 @@ def unaccept():
 
         printer("Checking Acceptedness")
         with Indent(printer):
-            accepted = get_acceptedness(args.target, args.serial, printer=printer)
+            accepted = get_acceptedness(args.target, args.merchant, printer=printer)
 
         if accepted == desired_value.strip('\''):
             printer("Already cleared, no change needed")
         else:
             printer("Revoking Acceptedness")
             with Indent(printer):
-                set_acceptedness(args.target, args.serial, desired_value, printer=printer)
+                set_acceptedness(args.target, args.merchant, desired_value, printer=printer)
     printer("OK")
 
 def accept():
 
-    args = parse(Arg.serial, Arg.target)
+    args = parse(Arg.merchant, Arg.target)
     printer = StatusPrinter()
     printer("Accepting Terms")
 
-    set_acceptedness(args.target, args.serial, "1")
+    set_acceptedness(args.target, args.merchant, "1")
 
-    new_val = get_acceptedness(args.target, args.serial)
+    new_val = get_acceptedness(args.target, args.merchant)
     if new_val == "1":
         print("OK", file=sys.stderr)
     else:
@@ -438,24 +553,6 @@ def get_auth_token(target, url, printer=StatusPrinter()):
         raise ValueError("Http header: 'AUTHORIZATION : BEARER {}' doesn't seem right.".format(auth_token))
 
     return auth_token
-
-# get the mid of the merchant with this uuid
-def get_mid(target, uuid, printer=StatusPrinter()):
-
-    q = Query(target, 'metaRO', 'test321',
-            """
-                SELECT id FROM merchant WHERE uuid='{}' LIMIT 1;
-            """.format(uuid))
-
-    mid_str = q.get_from_first_row(lambda row: row['id'], printer=printer)
-
-    return int(mid_str)
-
-# print the mid of the merchant with the specified uuid
-def print_merchant_id():
-
-    args = parse(Arg.merchant, Arg.target)
-    print(get_mid(args.target, args.merchant))
 
 # deprovision device from merchant
 def deprovision():
@@ -544,6 +641,8 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
 
     unique_str = str(datetime.datetime.utcnow().strftime('%s'))
     merchant_str = "merchant_" + unique_str
+    mid = int(unique_str)
+    bemid = 8000000000 - mid
 
 
     base_message = textwrap.dedent(
@@ -552,21 +651,21 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
       <RequestAction>Create</RequestAction>
       <MerchantDetail>
 	<CloverID></CloverID>
-	<MerchantNumber>444555777</MerchantNumber>
-	<BEMerchantNumber>999888777</BEMerchantNumber>
+	<MerchantNumber>{mid}</MerchantNumber>
+	<BEMerchantNumber>{bemid}</BEMerchantNumber>
 	<Platform>N</Platform>
 	<Sys-Prin>/</Sys-Prin>
-	<DBAName>{}</DBAName>
-	<LegalName>{}</LegalName>
-	<Address1>1307 Ben 123RD, x</Address1>
+	<DBAName>{merchant_str}</DBAName>
+	<LegalName>{merchant_str}</LegalName>
+	<Address1>100 Penny Lane</Address1>
 	<Address2 />
-	<City>Austine</City>
+	<City>Nowhere Land</City>
 	<State>TX</State>
-	<Zip>78751</Zip>
+	<Zip>11111</Zip>
 	<Country>US</Country>
-	<PhoneNumber>6316837808</PhoneNumber>
-	<Email>{}@foo.com</Email>
-	<Contact>Ben M LAST</Contact>
+	<PhoneNumber>1111111111</PhoneNumber>
+	<Email>{merchant_str}@.com</Email>
+	<Contact>Nowhere Man</Contact>
 	<BankMarker>123</BankMarker>
 	<MCCCode>5999</MCCCode>
 	<IndustryCode>5999</IndustryCode>
@@ -683,13 +782,12 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
 	<ShipZip>11747</ShipZip>
       </ShipAddress>
     </XMLRequest>
-    """)
+    """.format(**locals()))
 
-
-    #endpoint = '{}://{}/cos/v1/partner/fdc/create_merchant'.format(
-    endpoint = 'http://localhost:8080/cos/v1/partner/fdc/create_merchant'.format(
+    endpoint = '{}://{}:{}/cos/v1/partner/fdc/create_merchant'.format(
                 target.get_hypertext_protocol(),
-                target.get_hostname() + ":" + str(target.get_http_port()))
+                target.get_hostname(),
+                target.get_http_port())
 
     headers = { 'Content-Type' : 'text/plain',
                       'Accept' : '*/*',
@@ -698,6 +796,8 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
     data = base_message
 
     response = post(endpoint, headers, data, printer=printer)
+
+
 
     return response
 
@@ -708,8 +808,9 @@ def print_new_merchant():
     printer("Creating New Merchant")
     with Indent(printer):
         uid = create_merchant(args.target, args.reseller, printer=printer)
-
-
+        import IPython
+        IPython.embed()
+    print(uid)
 
 # provision device for new merchant
 def provision_new():
@@ -735,7 +836,7 @@ def provision_new():
 
         endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.target.get_hypertext_protocol(),
-                args.target.get_hostname() + ":" + args.target.get_http_port(),
+                args.target.get_hostname() + ":" + str(args.target.get_http_port()),
                 args.merchant,
                 args.serial)
 

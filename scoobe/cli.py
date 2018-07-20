@@ -1,12 +1,14 @@
 import textwrap
 import os
 import re
+import sys
 from collections import namedtuple
 from argparse import ArgumentParser, RawTextHelpFormatter
 from abc import ABC, abstractmethod
 from enum import Enum
 from scoobe.ssh import SshConfig
 from scoobe.properties import LocalServer
+from scoobe.common import StatusPrinter, Indent
 
 # used when generating classes (namedtuples) to store results
 def container_name_component(obj):
@@ -87,14 +89,18 @@ class Reseller(_IParsable):
         return value
 
 class Merchant(_IParsable):
-
     def preparse(self, parser):
-        parser.add_argument(field_name(self), type=str, help="the uuid of the merchant")
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the merchant")
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
-        if not re.match(r'[A-Za-z0-9]{13}', value):
-           raise ValueError("{} doesn't look like a merchant UUID".format(value))
+        try:
+            if not re.match(r'[A-Za-z0-9]{13}', value):
+                merch_id = int(value)
+                assert merch_id < 100000000000
+        except ValueError as err:
+            raise ValueError("{} doesn't look like a merchant id or UUID".format(value))
+
         return value
 
 class Cpuid(_IParsable):
@@ -186,3 +192,22 @@ def parse(*parsables):
     # wrap and return them
     ContainerType = namedtuple(container_name, field_list)
     return ContainerType(*results)
+
+def clistring():
+    snac = os.path.basename(sys.argv[0])
+    rest = ' '.join(sys.argv[1:])
+    return snac + ' ' + rest
+
+def print_or_warn(string, max_length=500, printer=StatusPrinter()):
+    if len(string) > max_length and sys.stdout.isatty():
+        printer("Output is {} chars (json) and stdout is a tty.".format(len(string)))
+        with Indent(printer):
+            printer("If you really want that much garbage in your terminal, write to a pipe, like so:")
+            with Indent(printer):
+                printer(clistring() + " | cat")
+            printer("Or better yet, use `jq` to query it, like so:")
+            with Indent(printer):
+                printer(clistring() + " | jq '.someKey[3]'")
+        sys.exit(15)
+    else:
+        print(string)

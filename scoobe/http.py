@@ -15,9 +15,11 @@ def print_request(printer, endpoint, headers, data):
     printer("[Request] " + endpoint)
     with Indent(printer):
         printer("headers:", end='')
-        printer(headers)
+        with Indent(printer):
+            printer(headers)
         printer("data:", end='')
-        printer(data)
+        with Indent(printer):
+            printer(data)
 
 def print_response(printer, response):
     printer("[Response]")
@@ -30,9 +32,12 @@ def print_response(printer, response):
         if isinstance(response.content, str):
             printer(response.content)
         else:
-            printer(response.content.decode(response.encoding))
+            if (response.encoding):
+                printer(response.content.decode(response.encoding))
+            else:
+                printer(response.content)
 
-def _do_request(verb, endpoint, headers, data, print_data=None, printer=StatusPrinter()):
+def _do_request(verb, endpoint, headers, data, is_json=False, print_data=None, printer=StatusPrinter()):
 
     # for obfuscating passwords
     if not print_data:
@@ -42,7 +47,10 @@ def _do_request(verb, endpoint, headers, data, print_data=None, printer=StatusPr
     with Indent(printer):
         print_request(printer, endpoint, headers, print_data)
         if data:
-            response = verb(endpoint, headers=headers, data=json.dumps(data))
+            if 'json' in ''.join(headers.values()).lower():
+                response = verb(endpoint, headers=headers, data=json.dumps(data))
+            else:
+                response = verb(endpoint, headers=headers, data=data)
         else:
             response = verb(endpoint, headers=headers)
         print_response(printer, response)
