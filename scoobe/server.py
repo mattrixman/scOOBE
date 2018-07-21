@@ -4,6 +4,7 @@ import re
 import json
 import textwrap
 import datetime
+import xmltodict
 import pprint as pp
 from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
@@ -57,6 +58,7 @@ def internal_auth(target,
                            'password' : 'letmein' },
                   printer=StatusPrinter()):
 
+
     endpoint = '{}://{}/cos/v1/dashboard/internal/login'.format(
                 target.get_hypertext_protocol(),
                 target.get_hostname() + ":" + str(target.get_http_port()))
@@ -68,26 +70,28 @@ def internal_auth(target,
     data = creds
 
     # first try with with a nonsense user
-    response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
+    printer("Attempting cloverDevAuth")
+    with Indent(printer):
+        response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
 
     if response.status_code == 200:
         return response.headers['set-cookie']
 
     # if that fails, use a real one
     elif response.status_code == 401:
-        printer("{} has cloverDevAuth unset, looking for real credentials".format(target.get_name()))
+        printer("{} has cloverDevAuth unset or false, looking for real credentials".format(target.get_name()))
 
         creds = get_creds(printer=printer)
         data = {'username' : creds.user,
                 'password' : creds.passwd}
 
-        response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
+        with Indent(printer):
+            response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
 
-        if response.status_code == 200:
-            return response.headers['set-cookie']
-    else:
-        raise Exception("Unexpected response from login endpoint")
-
+            if response.status_code == 200:
+                return response.headers['set-cookie']
+            else:
+                raise Exception("Unexpected response from login endpoint")
 
 def print_cookie():
     args = parse(Arg.target)
@@ -107,33 +111,36 @@ def is_uuid(string):
         return True
     return False
 
+class Merchant:
+    def __init__(self, row):
+        self.id = row['id']
+        self.uuid = row['uuid']
+        self.reseller_id = row['reseller_id']
+
+    def __str__(self):
+        return json.dumps(self.__dict__)
+
 # given a merchant id or a merchant uuid, get both
 def get_merchant(merchant, target, printer=StatusPrinter()):
 
-    class Merchant:
-        def __init__(self, row):
-            self.id = row['id']
-            self.uuid = row['uuid']
+    printer("Finding merchant {}'s identifiers according to {}".format(merchant, target.get_name()))
+    with Indent(printer):
+        if is_uuid(merchant):
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id, uuid, reseller_id
+                    FROM merchant
+                    WHERE uuid = '{}';
+                    """.format(merchant))
+        else:
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id, uuid, reseller_id
+                    FROM merchant
+                    WHERE id = {};
+                    """.format(merchant))
 
-        def __str__(self):
-            return json.dumps(self.__dict__)
-
-    if is_uuid(merchant):
-        q = Query(target, 'metaRO', 'test321',
-                """
-                SELECT id, uuid
-                FROM merchant
-                WHERE uuid = '{}';
-                """.format(merchant))
-    else:
-        q = Query(target, 'metaRO', 'test321',
-                """
-                SELECT id, uuid
-                FROM merchant
-                WHERE id = {};
-                """.format(merchant))
-
-    merchant = q.execute(Feedback.OneRow, lambda row : Merchant(row), printer=printer)
+        merchant = q.execute(Feedback.OneRow, lambda row : Merchant(row), printer=printer)
 
     if not merchant:
         printer("this merchant does not exist on {}".format(target.get_name()))
@@ -146,9 +153,7 @@ def print_merchant():
     printer = StatusPrinter(indent=0)
 
     try:
-        printer("Finding merchant {}'s identifiers according to {}".format(args.merchant, args.target.get_name()))
-        with Indent(printer):
-            merchant = get_merchant(args.merchant, args.target, printer=printer)
+        merchant = get_merchant(args.merchant, args.target, printer=printer)
         print(merchant)
 
     except ValueError as ex:
@@ -156,7 +161,7 @@ def print_merchant():
         sys.exit(30)
 
 # given a serial number and a server, get the merchant associated with that serial number on that server
-def get_device_merchant(serial, target, printer=StatusPrinter()):
+def get_device_merchant_id(serial, target, printer=StatusPrinter()):
 
     q = Query(target, 'metaRO', 'test321',
             """
@@ -181,9 +186,9 @@ def print_device_merchant():
     try:
         printer("Finding {}'s merchant according to {}".format(args.serial, args.target.get_name()))
         with Indent(printer):
-            merchant_id = get_device_merchant(args.serial, args.target, printer=printer)
+            merchant_id = get_device_merchant_id(args.serial, args.target, printer=printer)
 
-        printer("Finding merchant {}'s UUID according to {}".format(merchant_id, args.target.get_name()))
+        printer("Finding merchant {}'s identifiers according to {}".format(merchant_id, args.target.get_name()))
         with Indent(printer):
             merchant = get_merchant(merchant_id, args.target, printer=printer)
         print(merchant)
@@ -222,10 +227,8 @@ def print_resellers():
 
     output = json.dumps(resellers_dict)
 
+    printer('')
     print_or_warn(output, max_length=500)
-
-# returns the merchant currently associated with the specified device
-Reseller = namedtuple('Reseller', 'id uuid name')
 
 class Reseller:
     def __init__(self, row):
@@ -268,24 +271,27 @@ def print_device_reseller():
         sys.exit(90)
 
 
-SetResult = namedtuple('SetResult', 'change_made description')
-def describe_set_device_reseller(serial, target, target_reseller_id, printer=StatusPrinter()):
+# return true if desired state is achieved
+# whether or not this function made a change
+def set_device_reseller(serial, target, target_reseller, printer=StatusPrinter()):
 
     printer("Checking the device's reseller")
     with Indent(printer):
         current_reseller = get_device_reseller(serial, target, printer)
 
     if not current_reseller:
-        return SetResult(False, "Could not find reseller")
+        printer("Could not find reseller")
+        return False
 
     # don't modify if desired value is already set
-    if int(current_reseller.id) == int(target_reseller_id):
-        return SetResult(False, "The device's current reseller is the same as the target reseller ({}), making no change"
-                                .format(target_reseller_id))
+    if int(current_reseller.id) == int(target_reseller.id):
+        printer("The device's current reseller is the same as the target reseller ({}). Making no change."
+                                .format(target_reseller.id))
+        return True
 
-    # otherwise motfdy
+    # otherwise modify
     else:
-        printer("Changing the device's reseller: {} -> {}".format(current_reseller.id, target_reseller_id))
+        printer("Changing the device's reseller: {} -> {}".format(current_reseller.id, target_reseller.id))
         with Indent(printer):
 
             q = Query(target, 'metaRW', 'test789',
@@ -293,43 +299,55 @@ def describe_set_device_reseller(serial, target, target_reseller_id, printer=Sta
                     UPDATE device_provision
                     SET reseller_id = {}
                     WHERE serial_number = '{}';
-                    """.format(target_reseller_id, serial))
+                    """.format(target_reseller.id, serial))
 
             rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
 
             if rows_changed == 1:
-                return SetResult(True, "NOTICE: the attached device's reseller has changed from {} to {}".format(
-                                        current_reseller.id, target_reseller_id))
+                printer("NOTICE: the attached device's reseller has changed from {} to {}".format(
+                                        current_reseller.id, target_reseller.id))
+                return True
             else:
                 raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+def get_reseller(reseller, target, printer=StatusPrinter()):
+
+    printer("Finding reseller {}'s identifiers according to {}".format(reseller, target.get_name()))
+    with Indent(printer):
+
+        if is_uuid(reseller):
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id, uuid, name, parent_id
+                    FROM reseller
+                    WHERE uuid = '{}';
+                    """.format(reseller))
+        else:
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id, uuid, name, parent_id
+                    FROM reseller
+                    WHERE id = {};
+                    """.format(reseller))
+
+    reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
+
+    if not reseller:
+        printer("No such reseller found on {}".format(target.get_name()))
+
+    return reseller
 
 def print_set_device_reseller():
 
     args = parse(Arg.serial, Arg.target, Arg.reseller)
     printer = StatusPrinter(indent=0)
 
-    printer("Setting the device's reseller to {}".format(args.reseller))
+    printer("Setting device: {}'s reseller to {}".format(args.serial, args.reseller))
     with Indent(printer):
-        result = describe_set_device_reseller(args.serial, args.target, args.reseller, printer=printer)
-    printer(result.description)
-
-def get_merchant_reseller(merchant_uuid, target, printer=StatusPrinter()):
-
-    q = Query(target, 'metaRO', 'test321',
-            """
-            SELECT id, uuid, name, parent_id
-            FROM reseller
-            WHERE id = (SELECT reseller_id
-                        FROM merchant
-                        WHERE uuid = '{}');
-            """.format(merchant_uuid))
-
-    reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
-
-    if not reseller:
-        printer("This merchant is not associated with a reseller according to {}".format(target.get_name()))
-
-    return reseller
+        reseller = get_reseller(args.reseller, args.target, printer=printer)
+        if reseller:
+            set_device_reseller(args.serial, args.target, reseller, printer=printer)
+    printer("OK")
 
 def print_merchant_reseller():
 
@@ -337,9 +355,11 @@ def print_merchant_reseller():
     printer = StatusPrinter(indent=0)
 
     try:
-        printer("Finding {}'s reseller according to {}".format(args.merchant, args.target.get_name()))
+        merchant = get_merchant(args.merchant, args.target, printer=printer)
+
+        printer("Finding {}'s reseller according to {}".format(merchant.uuid, args.target.get_name()))
         with Indent(printer):
-            reseller = get_merchant_reseller(args.merchant, args.target, printer=printer)
+            reseller = get_reseller(merchant.reseller_id, args.target, printer=printer)
         if reseller:
             print(json.dumps(reseller.__dict__))
     except ValueError as ex:
@@ -359,7 +379,10 @@ def get_activation_code(target, serial, printer=StatusPrinter()):
     if not code:
         printer("This device is not known to {}".format(target.get_name()))
 
-    return code
+    if code == None:
+        return None
+    else:
+        return int(code)
 
 def print_activation_code():
 
@@ -391,54 +414,84 @@ def print_acceptedness():
     args = parse(Arg.merchant, Arg.target)
     printer = StatusPrinter(indent=0)
 
+    merchant = get_merchant(args.merchant, args.target)
+
     printer("Checking Acceptedness Code")
     with Indent(printer):
-        merchant_id = get_merchant(args.merchant, args.target)['id']
-
-        acceptedness = get_acceptedness(args.target, merchant_id, printer=printer)
+        acceptedness = get_acceptedness(args.target, merchant.id, printer=printer)
 
     print(acceptedness)
 
 def set_acceptedness(target, merchant_id, value, printer=StatusPrinter()):
 
-    q = Query(target, 'metaRW', 'test789',
-            """
-            UPDATE setting SET value = {}
-            WHERE merchant_id = {} AND name = 'ACCEPTED_BILLING_TERMS';
-             """.format(value, merchant_id, serial))
+    printer("Checking Current Value")
+    with Indent(printer):
+        current_value = get_acceptedness(target, merchant_id, printer=printer)
 
-    rows_changed = q.run_get_rows_changed(printer=printer)
-    if rows_changed != 1:
-        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+    if current_value != value:
+
+        printer("Updating Value")
+        with Indent(printer):
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    UPDATE setting SET value = {}
+                    WHERE merchant_id = {} AND name = 'ACCEPTED_BILLING_TERMS';
+                     """.format(value, merchant_id))
+
+            rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
+            if rows_changed != 1:
+                raise ValueError("Expected 1 change to table: setting, instead made {}".format(rows_changed))
+
+    else:
+        printer("No Change Needed")
 
 def set_activation_code(target, serial, value, printer=StatusPrinter()):
 
-    q = Query(target, 'metaRW', 'test789',
-            """
-            UPDATE device_provision SET activation_code = {}
-            WHERE serial_number = '{}';
-             """.format(value, serial))
+    printer("Checking Current Value")
+    with Indent(printer):
+        old_value = get_activation_code(target, serial, printer=printer)
 
-    rows_changes = q.execute(Feedback.ChangeCount, printer=printer)
+    if old_value != value:
 
-    if rows_changed != 1:
-        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+        printer("Setting New Value")
+        with Indent(printer):
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    UPDATE device_provision SET activation_code = {}
+                    WHERE serial_number = '{}';
+                     """.format(value, serial))
+
+            rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
+
+            if rows_changed != 1:
+                raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+        printer("Updating Historical Value")
+        with Indent(printer):
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    UPDATE device_provision SET last_activation_code = {}
+                    WHERE serial_number = '{}';
+                     """.format(old_value, serial))
+
+            rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
+
+            if rows_changed != 1:
+                raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+
+    else:
+
+        printer("No Change Needed")
+
 
 def print_set_activation():
 
     args = parse(Arg.serial, Arg.target, Arg.code)
     printer = StatusPrinter(indent=0)
 
-    printer("Checking Activation Code")
+    printer("Setting Activation Code to {}".format(args.code))
     with Indent(printer):
-        old_code = get_activation_code(args.target, args.serial, printer=printer)
-
-    if old_code == args.code:
-        printer("No change needed")
-    else:
-        printer("Setting Activation Code")
-        with Indent(printer):
-            set_activation_code(args.target, args.serial, args.code, printer=printer)
+        set_activation_code(args.target, args.serial, args.code, printer=printer)
 
 def get_last_activation_code(target, serial, printer=StatusPrinter()):
 
@@ -447,16 +500,12 @@ def get_last_activation_code(target, serial, printer=StatusPrinter()):
             SELECT last_activation_code FROM device_provision WHERE serial_number = '{}';
             """.format(serial))
 
-    q.on_empty("This device is not known to {}".format(target.get_name()))
+    last_activation_code = q.execute(Feedback.OneRow, lambda row : int(row['last_activation_code']))
 
-    def get(row):
-        val = row['last_activation_code']
-        if val:
-            return int(val)
-        else:
-            return None
+    if not last_activation_code:
+        raise ValueError("This device is not known to {}".format(target.get_name()))
 
-    return q.get_from_first_row(get, printer=printer)
+    return last_activation_code
 
 def describe_increment_last_activation_code(target, serial, printer=StatusPrinter()):
 
@@ -467,32 +516,36 @@ def describe_increment_last_activation_code(target, serial, printer=StatusPrinte
             WHERE serial_number = '{}';
             """.format(serial))
 
-    rows_changed = q.run_get_rows_changed(printer=printer)
+    rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
     if rows_changed == 1:
         return SetResult(True, "The activation code is now fresh")
     else:
-        raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
+        raise ValueError("Expected 1 change to device_provision, instead {} were made".format(rows_changed))
 
 def print_refresh_activation():
 
     args = parse(Arg.serial, Arg.target)
     printer = StatusPrinter(indent=0)
 
-    printer("Checking Last Activation Code")
+    printer("Refreshing Activation Code")
     with Indent(printer):
-        new_code = get_activation_code(args.target, args.serial, printer=printer)
 
-    printer("Checking Current Activation Code")
-    with Indent(printer):
-        old_code = get_last_activation_code(args.target, args.serial, printer=printer)
-
-    if old_code != new_code:
-        printer("Code is fresh, no change needed")
-    else:
-        printer("Code is stale, incrementing last_activation_code")
+        printer("Checking Last Activation Code")
         with Indent(printer):
-            result = describe_increment_last_activation_code(args.target, args.serial, printer=printer)
-        printer(result.description)
+            new_code = get_activation_code(args.target, args.serial, printer=printer)
+
+        printer("Checking Current Activation Code")
+        with Indent(printer):
+            old_code = get_last_activation_code(args.target, args.serial, printer=printer)
+
+        if old_code != new_code:
+            printer("Code is fresh, no change needed")
+
+        else:
+            printer("Code is stale, incrementing last_activation_code")
+            with Indent(printer):
+                result = describe_increment_last_activation_code(args.target, args.serial, printer=printer)
+            printer(result.description)
 
 def unaccept():
 
@@ -502,35 +555,33 @@ def unaccept():
 
     with Indent(printer):
 
+        merchant = get_merchant(args.merchant, args.target, printer=printer)
+
         desired_value = '\'0\''
         # yes, that's the string containing 0
         # word on the street is that it's better than 0 or null
 
-        printer("Checking Acceptedness")
+        printer("Revoking Acceptedness")
         with Indent(printer):
-            accepted = get_acceptedness(args.target, args.merchant, printer=printer)
+            set_acceptedness(args.target, args.merchant, desired_value, printer=printer)
 
-        if accepted == desired_value.strip('\''):
-            printer("Already cleared, no change needed")
-        else:
-            printer("Revoking Acceptedness")
-            with Indent(printer):
-                set_acceptedness(args.target, args.merchant, desired_value, printer=printer)
     printer("OK")
 
 def accept():
 
     args = parse(Arg.merchant, Arg.target)
     printer = StatusPrinter()
+
+
     printer("Accepting Terms")
+    with Indent(printer):
 
-    set_acceptedness(args.target, args.merchant, "1")
+        merchant = get_merchant(args.merchant, args.target, printer=printer)
 
-    new_val = get_acceptedness(args.target, args.merchant)
-    if new_val == "1":
-        print("OK", file=sys.stderr)
-    else:
-        raise ValueError("Failed to set acceptedness to {}.  Final value: {}".format("1", new_val))
+        set_acceptedness(args.target, merchant.id, "1")
+
+    printer("OK")
+
 
 # given a url and a server, get the auth token for that url on that server
 def get_auth_token(target, url, printer=StatusPrinter()):
@@ -547,7 +598,7 @@ def get_auth_token(target, url, printer=StatusPrinter()):
                     at.deleted_time IS NULL LIMIT 1;
             """.format(url))
 
-    auth_token = q.get_from_first_row(lambda row: row['HEX(at.uuid)'].decode('utf-8'), printer=printer)
+    auth_token = q.execute(Feedback.OneRow, lambda row: row['HEX(at.uuid)'], printer=printer)
 
     if not re.match(r'^[A-Z0-9]+$', auth_token):
         raise ValueError("Http header: 'AUTHORIZATION : BEARER {}' doesn't seem right.".format(auth_token))
@@ -562,51 +613,68 @@ def deprovision():
     printer("Deprovisioning Device")
     with Indent(printer):
 
-        auth_token = get_auth_token(args.target,
-                '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/deprovision')
 
-        mid = get_merchant(args.serial, args.target, printer=printer).uuid
+        printer("Finding device {}'s merchant according to {}".format(args.serial, args.target.get_name()))
+        with Indent(printer):
+            merchant_id = get_device_merchant_id(args.serial, args.target, printer=printer)
 
-        endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/deprovision'.format(
-                    args.target.hostname,
-                    mid,
-                    args.serial)
+        if merchant_id:
 
-        headers = { 'Authorization' : 'Bearer ' + auth_token }
+            printer("Getting the deprovision auth token according to {}".format(args.target.get_name()))
+            with Indent(printer):
+                auth_token = get_auth_token(args.target,
+                        '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/deprovision')
 
-        response = put(endpoint, headers, printer=printer, data={})
+            printer("Requesting that {} deprovision the device".format(args.target.get_name()))
+            with Indent(printer):
 
-    # TODO: server/scripts/disassociate_device.py also DELETEs '/v3/resellers/{rId}/devices/{serial}'
-    # maybe this function should do that also?
+                merchant = get_merchant(merchant_id, args.target, printer=printer)
 
-    if response.status_code == 200:
-        printer('OK')
-    else:
-        printer('Error')
-        sys.exit(10)
+                endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/deprovision'.format(
+                            args.target.hostname,
+                            merchant.uuid,
+                            args.serial)
+
+                headers = { 'Authorization' : 'Bearer ' + auth_token }
+
+                response = put(endpoint, headers, printer=printer, data={})
+
+                # TODO: server/scripts/disassociate_device.py also DELETEs '/v3/resellers/{rId}/devices/{serial}'
+                # maybe this function should do that also?
+
+                if response.status_code != 200:
+                    printer('Error')
+                    sys.exit(10)
+
+    printer('OK')
 
 # provision device for merchant
 def provision():
 
-    args = parse(Arg.serial, Arg.target, Arg.merchant, Arg.cpuid)
+    args = parse(Arg.serial, Arg.cpuid, Arg.target, Arg.merchant)
     printer = StatusPrinter(indent=0)
     printer("Provisioning Device")
     with Indent(printer):
 
-        printer("Checking merchant reseller")
-        skipResellerCheck = False
+        printer("Checking Merchant Reseller")
         with Indent(printer):
-            merchant_reseller = get_merchant_reseller(args.merchant, args.target, printer=printer).id
+            merchant = get_merchant(args.merchant, args.target, printer=printer)
+            merchant_reseller = get_reseller(merchant.reseller_id, args.target, printer=printer)
 
         printer("Ensuring device/merchant resellers match")
         with Indent(printer):
+
             try:
-                result = describe_set_device_reseller(args.serial, args.target, merchant_reseller, printer=printer)
-                if result.change_made:
-                    printer(result.descrption)
+                success = set_device_reseller(args.serial, args.target, merchant_reseller, printer=printer)
             except ValueError as err:
                 if "not associated" in str(err):
                     printer("Device not provisioned, so no conflicting reseller exists")
+                    success = True
+
+            # only proceed to provision if target merchant's reseller doesn't conflict
+            if not success:
+                sys.exit(313)
+
 
         endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
                 args.target.get_hypertext_protocol(),
@@ -624,7 +692,7 @@ def provision():
         with Indent(printer):
             headers = {'Authorization' : 'Bearer ' + auth_token }
 
-            data = {'mId': get_mid(args.target, args.merchant, printer=printer),
+            data = {'mId': merchant.id,
                     'merchantUuid': args.merchant,
                     'serial': args.serial,
                     'chipUid': args.cpuid}
@@ -643,7 +711,6 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
     merchant_str = "merchant_" + unique_str
     mid = int(unique_str)
     bemid = 8000000000 - mid
-
 
     base_message = textwrap.dedent(
     """
@@ -664,7 +731,7 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
 	<Zip>11111</Zip>
 	<Country>US</Country>
 	<PhoneNumber>1111111111</PhoneNumber>
-	<Email>{merchant_str}@.com</Email>
+	<Email>{merchant_str}@dev.null.com</Email>
 	<Contact>Nowhere Man</Contact>
 	<BankMarker>123</BankMarker>
 	<MCCCode>5999</MCCCode>
@@ -796,10 +863,57 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
     data = base_message
 
     response = post(endpoint, headers, data, printer=printer)
+    response_dict = xmltodict.parse(response.content.decode('utf-8'))
+    return response_dict['XMLResponse']['Merchant']['UUID']
 
+# return true if desired state is achieved
+# whether or not this function made a change
+def set_merchant_reseller(merchant, target, target_reseller, printer=StatusPrinter()):
 
+    printer("Checking the merchant's current reseller")
+    with Indent(printer):
+        current_reseller = get_reseller(merchant.reseller_id, target, printer)
 
-    return response
+    # don't modify if desired value is already set
+    if int(current_reseller.id) == int(target_reseller.id):
+        printer("The merchant's current reseller is the same as the target reseller ({}). Making no change."
+                                .format(target_reseller.id))
+        return True
+
+    # otherwise modify
+    else:
+        printer("Changing the merchnat's reseller: {} -> {}".format(current_reseller.id, target_reseller.id))
+        with Indent(printer):
+
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    UPDATE merchant
+                    SET reseller_id = {}
+                    WHERE id = '{}';
+                    """.format(target_reseller.id, merchant.id))
+
+            rows_changed = q.execute(Feedback.ChangeCount, printer=printer)
+
+            if rows_changed == 1:
+                printer("NOTICE: the merchant's reseller has changed from {} to {}".format(
+                    current_reseller.id, target_reseller.id))
+                return True
+            else:
+                raise ValueError("Expected 1 change to merchant, instead got {}".format(rows_changed))
+
+def print_set_merchant_reseller():
+
+    args = parse(Arg.merchant, Arg.target, Arg.reseller)
+    printer = StatusPrinter(indent=0)
+
+    printer("Setting the merchant's reseller to {}".format(args.reseller))
+    with Indent(printer):
+        merchant = get_merchant(args.merchant, args.target, printer=printer)
+        if merchant:
+            reseller = get_reseller(args.reseller, args.target, printer=printer)
+            if reseller:
+                set_merchant_reseller(merchant, args.target, reseller, printer=printer)
+    printer("OK")
 
 def print_new_merchant():
 
@@ -808,57 +922,45 @@ def print_new_merchant():
     printer("Creating New Merchant")
     with Indent(printer):
         uid = create_merchant(args.target, args.reseller, printer=printer)
-        import IPython
-        IPython.embed()
-    print(uid)
+        merchant = get_merchant(uid, args.target, printer=printer)
 
-# provision device for new merchant
-def provision_new():
-    args = parse(Arg.serial, Arg.target, Arg.merchant, Arg.reseller)
-    printer = StatusPrinter(indent=0)
-    printer("Provisioning New Device")
+    printer("Setting Merchant Reseller")
     with Indent(printer):
+        if merchant:
+            printer("Target Reseller")
+            reseller = get_reseller(args.reseller, args.target)
+            if reseller:
+                set_merchant_reseller(merchant, args.target, reseller)
 
-        printer("Checking merchant reseller")
-        skipResellerCheck = False
-        with Indent(printer):
-            merchant_reseller = get_merchant_reseller(args.merchant, args.target, printer=printer).id
+    if merchant:
+        print(uid)
 
-        printer("Ensuring device/merchant resellers match")
-        with Indent(printer):
-            try:
-                result = describe_set_device_reseller(args.serial, args.target, merchant_reseller, printer=printer)
-                if result.change_made:
-                    printer(result.descrption)
-            except ValueError as err:
-                if "not associated" in str(err):
-                    printer("Device not provisioned, so no conflicting reseller exists")
+def get_plan_groups(target, printer=StatusPrinter()):
 
-        endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
-                args.target.get_hypertext_protocol(),
-                args.target.get_hostname() + ":" + str(args.target.get_http_port()),
-                args.merchant,
-                args.serial)
+    endpoint = '{}://{}:{}/v3/merchant_plan_groups'.format(
+                target.get_hypertext_protocol(),
+                target.get_hostname(),
+                target.get_http_port())
 
-        printer("Getting provision endpoint auth token")
-        with Indent(printer):
-            auth_token = get_auth_token(args.target,
-                    '/v3/partner/pp/merchants/{mId}/devices/{serialNumber}/provision',
-                    printer=printer)
+    headers = { 'Accept' : '*/*',
+                'Cookie' : internal_auth(target, printer=printer)}
 
-        printer("Provisioning device to merchant")
-        with Indent(printer):
-            headers = {'Authorization' : 'Bearer ' + auth_token }
+    response = get(endpoint, headers, printer=printer)
 
-            data = {'mId': get_mid(args.target, args.merchant, printer=printer),
-                    'merchantUuid': args.merchant,
-                    'serial': args.serial,
-                    'chipUid': args.cpuid}
+    plan_group_dict = json.loads(response.content.decode('utf-8'))
 
-            response = put(endpoint, headers, data, printer=printer)
+    return plan_group_dict
 
-    if response.status_code == 200:
-        printer('OK')
-    else:
-        printer('Error')
-        sys.exit(20)
+def print_plan_groups():
+
+    args = parse(Arg.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Getting plan groups according to {}".format(args.target.get_name()))
+    with Indent(printer):
+        plan_groups_dict = get_plan_groups(args.target, printer=printer)
+
+    output = json.dumps(plan_groups_dict)
+
+    printer('')
+    print_or_warn(output, max_length=500)

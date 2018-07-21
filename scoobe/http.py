@@ -1,8 +1,9 @@
 import requests
 import json
+import pprint as pp
 from copy import deepcopy
 from enum import Enum
-from scoobe.common import StatusPrinter, Indent
+from scoobe.common import StatusPrinter, Indent, shorten, pretty_shorten, is_identity
 
 class Verb(Enum):
     get = requests.get
@@ -14,12 +15,28 @@ class Verb(Enum):
 def print_request(printer, endpoint, headers, data):
     printer("[Request] " + endpoint)
     with Indent(printer):
-        printer("headers:", end='')
+        printer("headers:")
         with Indent(printer):
-            printer(headers)
-        printer("data:", end='')
+            printer(pp.pformat(headers, indent=2))
+        printer("data:")
         with Indent(printer):
-            printer(data)
+            printer(pretty_shorten(data))
+
+def pretty_shorten_maybe_json(response):
+
+    content_str = str(response.content)
+    if response.encoding:
+        content_str = response.content.decode(response.encoding)
+
+    try:
+        content_dict = json.loads(content_str)
+    except ValueError:
+        return pretty_shorten(content_str)
+
+    if 'elements' in content_dict:
+        return pretty_shorten(content_dict['elements'])
+    else:
+        return pretty_shorten(content_dict)
 
 def print_response(printer, response):
     printer("[Response]")
@@ -28,14 +45,9 @@ def print_response(printer, response):
         printer(response.status_code)
         printer("reason:", end='')
         printer(response.reason)
-        printer("content:", end='')
-        if isinstance(response.content, str):
-            printer(response.content)
-        else:
-            if (response.encoding):
-                printer(response.content.decode(response.encoding))
-            else:
-                printer(response.content)
+        printer("content:")
+        with Indent(printer):
+            printer(pretty_shorten_maybe_json(response))
 
 def _do_request(verb, endpoint, headers, data, is_json=False, print_data=None, printer=StatusPrinter()):
 

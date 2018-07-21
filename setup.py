@@ -7,7 +7,7 @@ setup(name='scoobe',
       author_email='matt.rixman@clover.com',
       packages=['scoobe'],
       python_requires= '>=3',
-      install_requires=['uiautomator', 'sh', 'mysqlclient', 'sshconf', 'requests', 'ifaddr', 'sortedcontainers'],
+      install_requires=['uiautomator', 'sh', 'mysqlclient', 'sshconf', 'requests', 'ifaddr', 'sortedcontainers', 'xmltodict'],
       entry_points={'console_scripts' : [
           # press the button with the given text
           'press_button = scoobe.ui:press',
@@ -68,9 +68,7 @@ setup(name='scoobe',
           # attach the specified device to the specified merchant (modifies device reseller if necessary)
           'provision_device = scoobe.server:provision',
 
-          # create a new merchant and provision this device to it (under construction)
-          'provision_new_device = scoobe.server:provision_new',
-
+          # see whether this merchant has accepted billing terms
           'terms_accepted= scoobe.server:print_acceptedness',
 
           # clear the ACCEPTED_BILLING_TERMS flag
@@ -88,7 +86,7 @@ setup(name='scoobe',
           # refresh the activation code for a device if it is stale
           'refresh_activation = scoobe.server:print_refresh_activation',
 
-          # create a new merchant (under construction)
+          # create a new merchant
           'new_merchant = scoobe.server:print_new_merchant',
 
           # get a session cookie (asks the user to initialize some environment varibles if they are not set)
@@ -96,5 +94,11 @@ setup(name='scoobe',
 
           # describe the resellers on this server
           'resellers = scoobe.server:print_resellers',
+
+          # assign a reseller to a merchant
+          'set_merchant_reseller = scoobe.server:print_set_merchant_reseller',
+
+          # describe the merchant plan groups on this server
+          'plan_groups = scoobe.server:print_plan_groups',
 
           ]})

@@ -3,47 +3,9 @@ import MySQLdb.cursors
 import pprint as pp
 from enum import Enum
 from textwrap import dedent
-from scoobe.common import StatusPrinter, Indent
+from scoobe.common import StatusPrinter, Indent, shorten, pretty_shorten, is_identity
 from scoobe.properties import LocalServer
 from scoobe.ssh import SshConfig, PossibleSshTunnel
-
-# don't log huge responses
-max_line = 200
-max_rows = 20
-
-# trim str(data) by length only
-def shorten(data):
-    string = str(data)
-    if len(string) <= max_line:
-        return string
-    else:
-        return string[0:max_line] + '...'
-
-# trim pretty-printed data (frequently multi-line) by line length and num-lines
-def pretty_shorten(data):
-
-    output = ''
-
-    pretty_string = pp.pformat(data, indent=2)
-    for idx, line in enumerate(pretty_string.split('\n')):
-        output+=shorten(line) + '\n'
-        if idx > max_rows:
-            output+='...'
-            break
-
-    return output
-
-# nontrivial transforms get extra output
-# this tests to see if the user-supplied transform is trivial
-def is_identity(func):
-    try:
-        test_dict = {'foo' : 'bar'}
-        if func(test_dict) != test_dict:
-            return False
-        else:
-            return True
-    except:
-        return False
 
 # encapsulates the feedback you might expect from a mysql query
 class Feedback(Enum):
@@ -54,6 +16,13 @@ class Feedback(Enum):
     def OneRow(cursor, rowtransform, print_transform=False, printer=StatusPrinter()):
 
         row = cursor.fetchone()
+
+        next_row = cursor.fetchone()
+        if next_row:
+            raise Exception("OneRow feedback strategy saw at least two rows: {} and {}".format(row, next_row))
+            # this function refuses to break ties for you
+            # if you expected multiple rows, use the ManyRows feedback strategy and break them yourself
+
 
         # exit early if response is empty
         if not row:
@@ -105,7 +74,7 @@ class Feedback(Enum):
 
     def ChangeCount(cursor, rowtransform, print_transform=False, printer=StatusPrinter()):
 
-        if is_identity(rowtransform):
+        if not is_identity(rowtransform):
             printer("ChangeCount got nontrivial row transform.  It will be ignored.")
 
         change_ct = cursor.rowcount

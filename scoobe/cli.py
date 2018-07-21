@@ -2,6 +2,7 @@ import textwrap
 import os
 import re
 import sys
+import json
 from collections import namedtuple
 from argparse import ArgumentParser, RawTextHelpFormatter
 from abc import ABC, abstractmethod
@@ -35,6 +36,14 @@ class _IParsable(ABC):
     @abstractmethod
     def get_val(self, parser):
         pass
+
+def throw_if_not_id_or_uuid(value):
+    try:
+        if not re.match(r'[A-Za-z0-9]{13}', value):
+            reseller_id = int(value)
+            assert reseller_id < 100000000000
+    except ValueError as err:
+        raise ValueError("{} doesn't look like a reseller id or UUID".format(value))
 
 class Serial(_IParsable):
 
@@ -77,15 +86,24 @@ class Code(_IParsable):
            raise ValueError("{} doesn't look like an activation code".format(value))
         return value
 
-class Reseller(_IParsable):
+class PlanGroup(_IParsable):
 
     def preparse(self, parser):
-        parser.add_argument(field_name(self), type=int, help="the reseller id")
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the plan group")
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
-        if not value >= 0:
-            raise ValueError("{} doesn't look like a reseller_id".format(value))
+        throw_if_not_id_or_uuid(value)
+        return value
+
+class Reseller(_IParsable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the reseller")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        throw_if_not_id_or_uuid(value)
         return value
 
 class Merchant(_IParsable):
@@ -94,13 +112,7 @@ class Merchant(_IParsable):
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
-        try:
-            if not re.match(r'[A-Za-z0-9]{13}', value):
-                merch_id = int(value)
-                assert merch_id < 100000000000
-        except ValueError as err:
-            raise ValueError("{} doesn't look like a merchant id or UUID".format(value))
-
+        throw_if_not_id_or_uuid(value)
         return value
 
 class Cpuid(_IParsable):
@@ -199,15 +211,29 @@ def clistring():
     return snac + ' ' + rest
 
 def print_or_warn(string, max_length=500, printer=StatusPrinter()):
+
     if len(string) > max_length and sys.stdout.isatty():
-        printer("Output is {} chars (json) and stdout is a tty.".format(len(string)))
+
+        validJson = False
+        try:
+            json.loads(string)
+            validJson = True
+        except ValueError:
+            pass
+
+        if validJson:
+            printer("Output is {} chars (json) and stdout is a tty.".format(len(string)))
+        else:
+            printer("Output is {} chars and stdout is a tty.".format(len(string)))
+
         with Indent(printer):
-            printer("If you really want that much garbage in your terminal, write to a pipe, like so:")
+            printer("\nIf you really want that much garbage in your terminal, write to a pipe, like so:")
             with Indent(printer):
                 printer(clistring() + " | cat")
-            printer("Or better yet, use `jq` to query it, like so:")
-            with Indent(printer):
-                printer(clistring() + " | jq '.someKey[3]'")
+            if validJson:
+                printer("Or better yet, use `jq` to query it:") # because humans shouldn't have to read non-pretty json
+                with Indent(printer):
+                    printer(clistring() + " | jq '.someKey[3]'")
         sys.exit(15)
     else:
         print(string)

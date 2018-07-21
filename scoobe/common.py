@@ -1,8 +1,52 @@
 import sys
+import pprint as pp
 from textwrap import indent
 from enum import Enum
 from abc import ABC, abstractmethod
 from collections import namedtuple
+
+# don't log huge responses
+max_line = 200
+max_rows = 20
+
+# trim str(data) by length only
+def shorten(data):
+    string = str(data)
+    if len(string) <= max_line:
+        return string
+    else:
+        return string[0:max_line] + '...'
+
+# trim pretty-printed data (frequently multi-line) by line length and num-lines
+def pretty_shorten(data):
+
+    output = ''
+
+    if type(data) != str:
+        pretty_string = pp.pformat(data, indent=2)
+    else:
+        pretty_string = data
+
+    for idx, line in enumerate(pretty_string.split('\n')):
+        output+=shorten(line) + '\n'
+        if idx > max_rows:
+            output+='...'
+            break
+
+    return output
+
+# nontrivial transforms get extra output
+# this tests to see if the user-supplied transform is trivial
+def is_identity(func):
+    try:
+        test_dict = {'foo' : 'bar'}
+        if func(test_dict) == test_dict:
+            return True
+        else:
+            return False
+    except:
+        return False
+
 
 UserPass = namedtuple('UserPass', 'user passwd')
 
