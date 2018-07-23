@@ -428,13 +428,27 @@ def set_acceptedness(target, merchant_id, value, printer=StatusPrinter()):
     with Indent(printer):
         current_value = get_acceptedness(target, merchant_id, printer=printer)
 
-    if current_value != value:
+    # if no setting exists to frob
+    if not(current_value):
+
+        # warn, loudness depends on desired setting
+        printer("Acceptedness is undefined for this merchant.  Have they gone through OOBE once already?")
+        if value == '1':
+            raise ValueError("Acceptedness setting does not exist, cannot enable it")
+        else:
+            # missing setting is equivaluent to disabled acceptedness, fail quietly
+            pass
+
+        return
+
+    # if this action would produce an actual change, go ahead
+    if str(current_value) != str(value):
 
         printer("Updating Value")
         with Indent(printer):
             q = Query(target, 'metaRW', 'test789',
                     """
-                    UPDATE setting SET value = {}
+                    UPDATE setting SET value = '{}'
                     WHERE merchant_id = {} AND name = 'ACCEPTED_BILLING_TERMS';
                      """.format(value, merchant_id))
 
@@ -442,6 +456,7 @@ def set_acceptedness(target, merchant_id, value, printer=StatusPrinter()):
             if rows_changed != 1:
                 raise ValueError("Expected 1 change to table: setting, instead made {}".format(rows_changed))
 
+    # Otherwise warn and quietly continue
     else:
         printer("No Change Needed")
 
@@ -557,13 +572,9 @@ def unaccept():
 
         merchant = get_merchant(args.merchant, args.target, printer=printer)
 
-        desired_value = '\'0\''
-        # yes, that's the string containing 0
-        # word on the street is that it's better than 0 or null
-
         printer("Revoking Acceptedness")
         with Indent(printer):
-            set_acceptedness(args.target, args.merchant, desired_value, printer=printer)
+            set_acceptedness(args.target, merchant.id, "0", printer=printer)
 
     printer("OK")
 
@@ -675,13 +686,6 @@ def provision():
             if not success:
                 sys.exit(313)
 
-
-        endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
-                args.target.get_hypertext_protocol(),
-                args.target.get_hostname() + ":" + str(args.target.get_http_port()),
-                args.merchant,
-                args.serial)
-
         printer("Getting provision endpoint auth token")
         with Indent(printer):
             auth_token = get_auth_token(args.target,
@@ -690,12 +694,18 @@ def provision():
 
         printer("Provisioning device to merchant")
         with Indent(printer):
+
+            endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/provision'.format(
+                    args.target.get_hypertext_protocol(),
+                    args.target.get_hostname() + ":" + str(args.target.get_http_port()),
+                    merchant.uuid,
+                    args.serial)
+
             headers = {'Authorization' : 'Bearer ' + auth_token }
 
-            data = {'mId': merchant.id,
-                    'merchantUuid': args.merchant,
-                    'serial': args.serial,
-                    'chipUid': args.cpuid}
+            data = { 'merchantUuid': merchant.uuid,
+                     'serial': args.serial,
+                     'chipUid': args.cpuid }
 
             response = put(endpoint, headers, data, printer=printer)
 
