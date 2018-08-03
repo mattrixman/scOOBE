@@ -641,8 +641,9 @@ def deprovision():
 
                 merchant = get_merchant(merchant_id, args.target, printer=printer)
 
-                endpoint = 'https://{}/v3/partner/pp/merchants/{}/devices/{}/deprovision'.format(
-                            args.target.hostname,
+                endpoint = '{}://{}/v3/partner/pp/merchants/{}/devices/{}/deprovision'.format(
+                            args.target.get_hypertext_protocol(),
+                            args.target.get_hostname() + ":" + str(args.target.get_http_port()),
                             merchant.uuid,
                             args.serial)
 
