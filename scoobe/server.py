@@ -173,7 +173,7 @@ def get_device_merchant_id(serial, target, printer=StatusPrinter()):
     merchant_id = q.execute(Feedback.OneRow, lambda row : row['merchant_id'], printer=printer)
 
     if not merchant_id:
-        printer("this device is not associated with a merchant on {}".format(target.get_name()))
+        raise ValueError("this device is not associated with a merchant on {}".format(target.get_name()))
 
     return merchant_id
 
@@ -624,12 +624,11 @@ def deprovision():
     printer("Deprovisioning Device")
     with Indent(printer):
 
+        try:
 
-        printer("Finding device {}'s merchant according to {}".format(args.serial, args.target.get_name()))
-        with Indent(printer):
-            merchant_id = get_device_merchant_id(args.serial, args.target, printer=printer)
-
-        if merchant_id:
+            printer("Finding device {}'s merchant according to {}".format(args.serial, args.target.get_name()))
+            with Indent(printer):
+                merchant_id = get_device_merchant_id(args.serial, args.target, printer=printer)
 
             printer("Getting the deprovision auth token according to {}".format(args.target.get_name()))
             with Indent(printer):
@@ -657,6 +656,11 @@ def deprovision():
                 if response.status_code != 200:
                     printer('Error')
                     sys.exit(10)
+
+
+        except ValueError as ex:
+            printer(str(ex))
+            sys.exit(30)
 
     printer('OK')
 
