@@ -156,6 +156,16 @@ class Mini(Device) :
         (target, url) = target_url.split(',')
         return (target, url)
 
+class Mini2(Device):
+
+        def get_target(self):
+            self.wait_ready()
+            target = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
+            url = str(adb.shell('cat', '/pip/CLOVER_CLOUD_URL'))
+            if re.match('http://.*', url):
+                url = url[7:]
+            return (target, url)
+
 class Flex(Device):
 
     def get_shutdown_delay(self):
@@ -201,7 +211,7 @@ prefix2codename = { "10" : "GOLDLEAF",
 codename2class = { "GOLDLEAF"    : Station,
                    "LEAFCUTTER"  : Mobile,
                    "MAPLECUTTER" : Mini,
-                   "KNOTTY_PINE" : Mini,
+                   "KNOTTY_PINE" : Mini2,
                    "BAYLEAF"     : Flex,
                    "GOLDEN_OAK"  : Station2018 }
 
