@@ -158,13 +158,13 @@ class Mini(Device) :
 
 class Mini2(Device):
 
-        def get_target(self):
-            self.wait_ready()
-            target = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
-            url = str(adb.shell('cat', '/pip/CLOVER_CLOUD_URL'))
-            if re.match('http://.*', url):
-                url = url[7:]
-            return (target, url)
+    def get_target(self):
+        self.wait_ready()
+        target = str(adb.shell('cat', '/pip/CLOVER_TARGET'))
+        url = str(adb.shell('cat', '/pip/CLOVER_CLOUD_URL'))
+        if re.match('http://.*', url):
+            url = url[7:]
+        return (target, url)
 
 class Flex(Device):
 
