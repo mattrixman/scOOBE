@@ -74,6 +74,22 @@ def set_target():
     with Indent(printer):
         get_connected_device(printer=printer).set_target(args.targettype, args.server)
 
+# Station 2018, Mini2 and Flex have a clover_cpuid (16 characters)
+# in addition to the 32 digit cpuid
+# if the device has a clover_cpuid get that
+# otherwise fall back to the 32 digit cpuid 
+# Station 2018 returns two cpuids, one of which is all 0's
+# Flex and Mini return just one
+# This takes the highest (string order) which works for both
+def get_cpuid(codename):
+    if codename in ["KNOTTY_PINE","GOLDEN_OAK","BAYLEAF"]:
+        return  sorted(list(sed(adb.shell('getprop'), '-n',
+                r's/^.*clover_cpuid.*\[\([0-9a-fA-F]\{16\}\).*$/\1/p')))[-1].strip()
+    else:
+        return  sorted(list(sed(adb.shell('getprop'), '-n',
+                r's/^.*cpuid.*\[\([0-9a-fA-F]\{32\}\).*$/\1/p')))[-1].strip()
+
+
 def get_connected_device(printer=StatusPrinter()):
     wait_ready(printer)
 
@@ -82,16 +98,13 @@ def get_connected_device(printer=StatusPrinter()):
         r's/^.*serial.*\[\(C[A-Za-z0-9]\{3\}[UE][CQNOPRD][0-9]\{8\}\).*$/\1/p')).split('\n')[0]
     assert(len(serial) > 0)
 
-    # Station 2018 returns two cpuids, one of which is all 0's
-    # Flex and Mini return just one
-    # This takes the highest (string order) which works for both
-    cpuid = sorted(list(sed(adb.shell('getprop'), '-n',
-        r's/^.*cpuid.*\[\([0-9a-fA-F]\{32\}\).*$/\1/p')))[-1].strip()
-    assert(len(cpuid) > 0)
-
     codename = prefix2codename[serial[2:4]]
 
     device = codename2class[codename]()
+
+    cpuid = get_cpuid(codename)
+    assert(len(cpuid) > 0)
+
     device.serial = serial
     device.cpuid = cpuid
     device.codename = codename
