@@ -53,7 +53,7 @@ class Serial(_IParsable):
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
 
-        if not re.match(r'C[A-Za-z0-9]{3}[UE][CQNOPRD][0-9]{8}', value):
+        if not re.match(r'C[A-Za-z0-9]{3}[UEL][CQNOPRD][0-9]{8}', value):
            raise ValueError("{} doesn't look like a serial number".format(value))
         return value
 

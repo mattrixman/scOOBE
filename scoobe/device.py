@@ -61,7 +61,7 @@ def master_clear():
     with Indent(printer):
         with Indent(printer):
             d = get_connected_device(printer=printer)
-        cmd = ['shell', 'am', 'broadcast', '-a', 'android.intent.action.MASTER_CLEAR']
+        cmd = ['shell', 'am', 'broadcast', '-a', 'android.intent.action.MASTER_CLEAR', '-n', 'android/com.android.server.MasterClearReceiver']
         printer('\'' + ' '.join(cmd) + '\'')
         adb(cmd)
     sleep(d.get_shutdown_delay())
@@ -77,7 +77,7 @@ def set_target():
 # Station 2018, Mini2 and Flex have a clover_cpuid (16 characters)
 # in addition to the 32 digit cpuid
 # if the device has a clover_cpuid get that
-# otherwise fall back to the 32 digit cpuid 
+# otherwise fall back to the 32 digit cpuid
 # Station 2018 returns two cpuids, one of which is all 0's
 # Flex and Mini return just one
 # This takes the highest (string order) which works for both
@@ -95,7 +95,7 @@ def get_connected_device(printer=StatusPrinter()):
 
     # tested for flex, mini, and station_2018
     serial = str(sed(adb.shell('getprop'), '-n',
-        r's/^.*serial.*\[\(C[A-Za-z0-9]\{3\}[UE][CQNOPRD][0-9]\{8\}\).*$/\1/p')).split('\n')[0]
+        r's/^.*serial.*\[\(C[A-Za-z0-9]\{3\}[UEL][CQNOPRD][0-9]\{8\}\).*$/\1/p')).split('\n')[0]
     assert(len(serial) > 0)
 
     codename = prefix2codename[serial[2:4]]
