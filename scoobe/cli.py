@@ -122,7 +122,7 @@ class Cpuid(_IParsable):
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
-        if not re.match(r'[A-Fa-f0-9]{32}', value):
+        if not re.match(r'[A-Fa-f0-9]{16,32}', value):
            raise ValueError("{} doesn't look like a device cpuid".format(value))
         return value
 
