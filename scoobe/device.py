@@ -193,7 +193,14 @@ class Flex(Device):
         return (target, url)
 
 class Mobile(Device):
-    pass
+
+    def get_target(self):
+        self.wait_ready()
+        target_url = str(sed(adb.shell('mmc_access', 'r_yj2_target'), '-n',
+                r's/^.*YJ2[^:]*: \([^:]*\):\(.*\).*$/\1,\2/p')).strip()
+        assert(len(target_url) > 0)
+        (target, url) = target_url.split(',')
+        return (target, url)
 
 class Station(Device):
     pass
