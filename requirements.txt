@@ -6,4 +6,4 @@
 #
 sh==1.12.14
 uiautomator==0.3.2
-urllib3==1.22             # via uiautomator
+urllib3==1.23             # via uiautomator

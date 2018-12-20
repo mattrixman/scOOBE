@@ -280,8 +280,8 @@ def set_device_reseller(serial, target, target_reseller, printer=StatusPrinter()
         current_reseller = get_device_reseller(serial, target, printer)
 
     if not current_reseller:
-        printer("Could not find reseller")
-        return False
+        printer("No device reseller found, setting it.")
+        current_reseller = Reseller({'id' : 999999, 'uuid' : 'NONE', 'name' : 'NONE', 'parent_id' : 999999})
 
     # don't modify if desired value is already set
     if int(current_reseller.id) == int(target_reseller.id):
