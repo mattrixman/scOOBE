@@ -879,7 +879,7 @@ eu_xml = """
     <contactInformation>
       <contactName>Ben</contactName>
       <phoneNumber>1234567890</phoneNumber>
-      <email>matt.rixman+2019-02-20@clover.com</email>
+      <email>{merchant_str}@notavalidaddress.com</email>
     </contactInformation>
     <reseller>FDMS-NGPOS</reseller>
     <currency>EUR</currency>
