@@ -4,7 +4,7 @@ import re
 import sys
 import json
 from collections import namedtuple
-from argparse import ArgumentParser, RawTextHelpFormatter
+from argparse import ArgumentParser, RawTextHelpFormatter, FileType
 from abc import ABC, abstractmethod
 from enum import Enum
 from scoobe.ssh import SshConfig
@@ -43,7 +43,7 @@ def throw_if_not_id_or_uuid(value):
             reseller_id = int(value)
             assert reseller_id < 100000000000
     except ValueError as err:
-        raise ValueError("{} doesn't look like a reseller id or UUID".format(value))
+        raise ValueError("{} doesn't look like a row id or UUID".format(value))
 
 class Serial(_IParsable):
 
@@ -69,10 +69,10 @@ class Target(_IParsable):
 
     def get_val(self, parser):
 
-       value = getattr(parser, field_name(self))
-       if os.path.exists(value):
+        value = getattr(parser, field_name(self))
+        if os.path.exists(value):
             return LocalServer(value)
-       else:
+        else:
             return SshConfig(value)
 
 class Code(_IParsable):
@@ -96,6 +96,37 @@ class PlanGroup(_IParsable):
         throw_if_not_id_or_uuid(value)
         return value
 
+class Name(_IParsable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="A name for this thing")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
+class TrialDays(_IParsable):
+
+    def preparse(self, parser):
+        parser.add_argument('-t', '--'+field_name(self), type=int, default=0, help="how many days should the trial be? (omit for no trial)")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        if value < 0:
+            raise ValueError("{} is an invalid trial period".format(value))
+        if value == 0:
+            value = None
+        return value
+
+class EnforcePlanAssignment(_IParsable):
+
+    def preparse(self, parser):
+        parser.add_argument('-e', '--'+field_name(self), action='store_true', help="indicates that merchants cannot move between plans on this group")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
 class Reseller(_IParsable):
 
     def preparse(self, parser):
@@ -109,6 +140,24 @@ class Reseller(_IParsable):
 class Merchant(_IParsable):
     def preparse(self, parser):
         parser.add_argument(field_name(self), type=str, help="the id or the uuid of the merchant")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        throw_if_not_id_or_uuid(value)
+        return value
+
+class PlanGroup(_IParsable):
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the plan_group")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        throw_if_not_id_or_uuid(value)
+        return value
+
+class Plan(_IParsable):
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the plan")
 
     def get_val(self, parser):
         value = getattr(parser, field_name(self))
@@ -161,20 +210,58 @@ class Server(_IParsable):
            raise ValueError("{} doesn't look like an ip address".format(value))
         return value
 
+class PlanDict(_IParsable):
+
+    def preparse(self, parser):
+        parser.add_argument('-j', '--'+field_name(self), default=sys.stdin, type= FileType('r'), nargs='?',
+                            help=textwrap.dedent(
+                                """
+                                A file containing JSON which definines the plan to stdin.
+                                If not specified, will try to read from stdin.
+                                If the id and uuid entries are missing, a new plan will be created.
+                                If they match, the existing one will be updated.
+
+                                Note that you may need to modify the json for referential integrity, like so:
+
+                                get_plan 3 stg1 \\
+                                    | jq 'del(.id)
+                                              | del(.uuid)
+                                              | .merchant_plan_group="THEMERCHPLANGROUPUUID"
+                                              | .app_bundle="THEAPPBUNDLEUUID"' \\
+                                    | set_plan stg3
+                                 """))
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        parsed = json.loads(value.read())
+        return parsed
+
+
 class Parsable(Enum):
     serial = Serial
     target = Target
     code = Code
     cpuid = Cpuid
     merchant = Merchant
+    plan_group = PlanGroup
+    plan = Plan
     reseller = Reseller
     target_type = TargetType
     server = Server
+    trial_days = TrialDays
+    enforce_plan_assignment = EnforcePlanAssignment
+    plan_dict=PlanDict
+    name = Name
 
 # given a list of parsables, return a namedtuple containing their results
-def parse(*parsables):
+def parse(*parsables, description=None):
 
-    parser = ArgumentParser(formatter_class=RawTextHelpFormatter)
+    argparseargs = { 'formatter_class' : RawTextHelpFormatter }
+
+    if description:
+        argparseargs['description'] = description
+
+    parser = ArgumentParser(**argparseargs)
 
     # replace enums with underlying classes
     parsables = [ x.value() for x in parsables ]

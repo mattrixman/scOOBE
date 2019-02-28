@@ -98,7 +98,34 @@ setup(name='scoobe',
           # assign a reseller to a merchant
           'set_merchant_reseller = scoobe.server:print_set_merchant_reseller',
 
-          # describe the merchant plan groups on this server
+          # list the merchant plan groups on this server
           'plan_groups = scoobe.server:print_plan_groups',
+
+          # given a plan_group uuid or a merchant id, print the other
+          'plan_group = scoobe.server:print_plan_group',
+
+          # create a new plan group
+          'new_plan_group = scoobe.server:print_new_plan_group',
+
+          # dump an existing plan to json
+          'get_plan = scoobe.server:print_get_plan',
+
+          # read a new plan from json
+          'new_plan = scoobe.server:print_new_plan',
+
+          # update an existing plan from json
+          'set_plan = scoobe.server:print_set_plan',
+
+          # list the partner controls on this server
+          'partner_controls = scoobe.server:print_partner_controls',
+
+          # dump an existing partner_control to json
+          'get_partner_control = scoobe.server:print_get_partner_control',
+
+          # read a new partner_control from json
+          'new_partner_control = scoobe.server:print_new_partner_control',
+
+          # update an existing partner_control from json
+          'set_partner_control = scoobe.server:print_set_partner_control',
 
           ]})

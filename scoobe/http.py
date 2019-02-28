@@ -49,7 +49,7 @@ def print_response(printer, response):
         with Indent(printer):
             printer(pretty_shorten_maybe_json(response))
 
-def _do_request(verb, endpoint, headers, data, is_json=False, print_data=None, printer=StatusPrinter()):
+def _do_request(verb, endpoint, headers, data, print_data=None, printer=StatusPrinter()):
 
     # for obfuscating passwords
     if not print_data:
@@ -60,7 +60,7 @@ def _do_request(verb, endpoint, headers, data, is_json=False, print_data=None, p
         print_request(printer, endpoint, headers, print_data)
         if data:
             if 'json' in ''.join(headers.values()).lower():
-                response = verb(endpoint, headers=headers, data=json.dumps(data))
+                response = verb(endpoint, headers=headers, json=data)
             else:
                 response = verb(endpoint, headers=headers, data=data)
         else:

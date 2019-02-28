@@ -20,11 +20,11 @@ class LocalServer(ServerTarget):
 
         name2mask = { 'port'       : 'port=(.*)',
                       'admin_port' : 'adminPort=(.*)',
-                      'db_name'     : 'metaDbName=(.*)',
-                      'ro_user'     : 'metaDbUsersRO=([^,]*)',
-                      'ro_pass'     : 'metaDbPasswordsRO=([^,]*)',
-                      'rw_user'     : 'metaDbUser=(.*)',
-                      'rw_pass'     : 'metaDbPassword=(.*)' }
+                      'db_name'     : 'metaReaderDatabase=(.*)',
+                      'ro_user'     : 'metaReaderUsername=([^,]*)',
+                      'ro_pass'     : 'metaReaderPassword=([^,]*)',
+                      'rw_user'     : 'metaWriterUsername=(.*)',
+                      'rw_pass'     : 'metaWriterPassword=(.*)' }
 
         with open(s) as prop_file:
             props = prop_file.read()
@@ -34,10 +34,11 @@ class LocalServer(ServerTarget):
                 if match:
                     setattr(self, '_' + name, match.group(1))
                 else:
-                    raise argparse.ArgumentTypeError("Invalid props file: " + s)
+                    raise argparse.ArgumentTypeError("Invalid props file: {} (Couldn't find {}) ".format(
+                        prop_file,
+                        mask))
 
         self._file = str(s)
-        print("__init__: ", s)
         self._name = "the local server with `-profile {0}`".format(self._file)
 
     def get_name(self):
