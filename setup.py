@@ -128,4 +128,19 @@ setup(name='scoobe',
           # update an existing partner_control from json
           'set_partner_control = scoobe.server:print_set_partner_control',
 
+          # which plan does this partner control board to?
+          'get_partner_control_plan = scoobe.server:print_get_partner_control_plan',
+
+          # change the plan that this partner control boards to
+          'set_partner_control_plan = scoobe.server:print_set_partner_control_plan',
+
+          # dump an existing reseller to json
+          'get_reseller = scoobe.server:print_get_reseller',
+
+          # read a new reseller from json
+          'new_reseller = scoobe.server:print_new_reseller',
+
+          # update an existing reseller from json
+          'set_reseller = scoobe.server:print_set_reseller',
+
           ]})

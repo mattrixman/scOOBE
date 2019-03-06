@@ -6,7 +6,7 @@ import json
 import ifaddr
 import ipaddress
 from scoobe.common import StatusPrinter, Indent
-from scoobe.cli import parse, Parsable as Arg
+from scoobe.cli import parse, Parsable
 from collections import namedtuple
 from sortedcontainers import SortedDict
 from enum import Enum
@@ -67,12 +67,12 @@ def master_clear():
     sleep(d.get_shutdown_delay())
 
 def set_target():
-    args = parse(Arg.target_type, Arg.server)
+    parsed_args = parse(Parseable.target_type, Parseable.server)
 
     printer = StatusPrinter(indent=0)
-    printer("Targeting attached device to {} {}".format(args.targettype, args.server))
+    printer("Targeting attached device to {} {}".format(parsed_args.targettype, parsed_args.server))
     with Indent(printer):
-        get_connected_device(printer=printer).set_target(args.targettype, args.server)
+        get_connected_device(printer=printer).set_target(parsed_args.targettype, parsed_args.server)
 
 # Station 2018, Mini2 and Flex have a clover_cpuid (16 characters)
 # in addition to the 32 digit cpuid

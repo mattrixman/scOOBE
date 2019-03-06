@@ -5,11 +5,11 @@ import json
 import textwrap
 import datetime
 import xmltodict
+import time
 import pprint as pp
 from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
-from argparse import ArgumentParser
-from scoobe.cli import parse, print_or_warn, Parsable as Arg
+from scoobe.cli import parse, print_or_warn, Parseable, Region
 from scoobe.common import StatusPrinter, Indent
 from scoobe.http import get, put, post
 from scoobe.ssh import SshConfig, UserPass
@@ -94,7 +94,7 @@ def internal_auth(target,
                 raise Exception("Unexpected response from login endpoint")
 
 def print_cookie():
-    parsed_args = parse(Arg.target)
+    parsed_args = parse(Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Getting a login cookie from {}".format(parsed_args.target.get_name()))
@@ -115,12 +115,22 @@ class ServerObject:
     def __str__(self):
         return json.dumps(self.__dict__)
 
-class Reseller:
+class Reseller(ServerObject):
     def __init__(self, row):
         self.db_id = row['db_id']
         self.id = row['id']
-        self.name = row['name']
-        self.parent_id = row['parent_id']
+
+    def apply_response(self, content):
+        for key in [ 'name',                'alternateName',        'owner',                     'defaultPaymentProcessor',
+                    'defaultProcessorKey',  'supportsNakedCredit',  'supportsOutboundBoarding',  'enforceMerchantPlan',
+                    'supportPhone',         'supportEmail',         'filterApps',                'forcePhone',
+                    'stationsOnClassic',    'createdTime',          'parentReseller',            'href',
+                    'isBulkPurchaser',      'isRkiIdentifier',      'isSelfBoarding',            'isIntercomEnabled',
+                    'locale' ]:
+            try:
+                setattr(self, key, content[key])
+            except KeyError:
+                pass
 
 class Merchant(ServerObject):
     def __init__(self, row):
@@ -143,13 +153,23 @@ class Plan(ServerObject):
         self.merchantPlanGroup_db_id = row['merchant_plan_group_id']
 
     def apply_response(self, content):
-        self.description = content['description']
-        self.merchantPlanGroup = content['merchantPlanGroup']
-        self.planCode = content['planCode']
-        self.billToMid = content['billToMid']
-        self.defaultPlan = content['defaultPlan']
-        self.name = content['name']
-        self.appBundle = content['appBundle']
+        for key in [ 'description', 'merchantPlanGroup', 'planCode', 'billToMid', 'defaultPlan', 'name', 'appBundle' ]:
+            try:
+                setattr(self, key, content[key])
+            except KeyError:
+                pass
+
+class PartnerControl(ServerObject):
+    def __init__(self, row):
+        self.db_id = row['db_id']
+        self.id = row['id']
+
+    def apply_response(self, content):
+        for key in [ 'enabled', 'modifyMatch', 'criteria', 'name' ]:
+            try:
+                setattr(self, key, content[key])
+            except KeyError:
+                pass
 
 # given a merchant id or a merchant uuid, get both
 def get_merchant(merchant, target, printer=StatusPrinter()):
@@ -161,7 +181,7 @@ def get_merchant(merchant, target, printer=StatusPrinter()):
                     """
                     SELECT id as db_id, uuid as id, reseller_id
                     FROM merchant
-                    WHERE id = '{}';
+                    WHERE uuid = '{}';
                     """.format(merchant))
         else:
             q = Query(target, 'metaRO', 'test321',
@@ -180,7 +200,7 @@ def get_merchant(merchant, target, printer=StatusPrinter()):
 
 def print_merchant():
 
-    parsed_args = parse(Arg.merchant, Arg.target)
+    parsed_args = parse(Parseable.merchant, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -211,7 +231,7 @@ def get_device_merchant_id(serial, target, printer=StatusPrinter()):
 
 def print_device_merchant():
 
-    parsed_args = parse(Arg.serial, Arg.target)
+    parsed_args = parse(Parseable.serial, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -244,12 +264,11 @@ def get_resellers(target, printer=StatusPrinter()):
     reseller_dict = {}
     for row_dict in row_dicts:
         reseller_dict.update(row_dict)
-
     return reseller_dict
 
 def print_resellers():
 
-    parsed_args = parse(Arg.target)
+    parsed_args = parse(Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Getting resellers according to {}".format(parsed_args.target.get_name()))
@@ -260,6 +279,158 @@ def print_resellers():
 
     printer('')
     print_or_warn(output, max_length=500)
+
+def get_reseller(reseller, target, identifiers_only=False, and_channels=False, printer=StatusPrinter()):
+    printer("Finding reseller {}'s identifiers according to {}".format(reseller, target.get_name()))
+    with Indent(printer):
+        if is_uuid(reseller):
+            ident='uuid'
+        else:
+            ident='id'
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id as db_id, uuid as id
+                FROM reseller
+                WHERE {} = '{}';
+                """.format(ident, reseller))
+
+        reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
+
+    if identifiers_only:
+        return reseller
+
+    printer("Getting reseller {} from {}".format(reseller, target.get_name()))
+    with Indent(printer):
+
+        path='v3/resellers/{}'.format(reseller.id)
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json ',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        response = get(endpoint, headers, printer=printer)
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("GET on {} returned code {}".format(endpoint, response.status_code))
+
+        reseller.apply_response(json.loads(response.content.decode('utf-8')))
+
+    if and_channels:
+
+        def mark(prop, val):
+
+            db2tag = { 'chain_agent' : { 'Agent'      : val },
+                       'chain_bank'  : { 'Bank'       : val },
+                       'marker'      : { 'BankMarker' : val },
+                       'sysprin'     : { 'Sys-Prin'   : val },
+                       'code'        : { 'Reseller'   : val } }
+
+            if prop in db2tag:
+                reseller.channel = db2tag[prop]
+
+        printer("Finding reseller {}'s channels according to {}".format(reseller.id, target.get_name()))
+        with Indent(printer):
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT chain_agent, chain_bank, marker, sysprin
+                    FROM reseller_channels
+                    WHERE reseller_id = '{}';
+                    """.format(reseller.db_id))
+            channels = q.execute(Feedback.ManyRows)
+
+            if not channels:
+                raise ValueError("Can't board a merchant to a reseller if the reseller has no channels")
+
+            # just need one
+            marked = False
+            for channel in channels[::-1]:
+                if not marked:
+                    for k, v in channel.items():
+                        if v and not marked:
+                            mark(k, v)
+                            marked = True
+
+            if not marked:
+                raise ValueError("This reseller has no channels, how can a merchant be boarded?")
+
+    return reseller
+
+def print_get_reseller():
+
+    parsed_args = parse(Parseable.reseller, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=True, printer=printer)
+
+    print_or_warn(str(reseller), max_length=500)
+
+def set_reseller(reseller_dict, target, printer=StatusPrinter()):
+
+    printer("[Updating reseller from supplied json]")
+    with Indent(printer):
+
+        path='v3/resellers'
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        data = reseller_dict
+
+        response = post(endpoint, headers, data, printer=printer)
+
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+
+        return json.loads(response.content.decode('utf-8'))
+
+def print_set_reseller():
+
+    parsed_args = parse(Parseable.reseller_dict, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    printer('foo')
+    if 'id' in parsed_args.resellerdict:
+        reseller = get_reseller(parsed_args.resellerdict['id'], parsed_args.target, printer)
+    elif 'db_id' in parsed_args.resellerdict:
+        reseller = get_reseller(parsed_args.resellerdict['db_id'], parsed_args.target, printer)
+        parsed_args.resellerdict['id'] = reseller.id
+    else:
+        printer(textwrap.dedent(
+            """It is not clear which reseller you want to update, maybe try new_reseller?
+               Otherwise, specify either 'db_id' or 'id' (uuid) in the json, like so:
+                 {
+                   "id" : "SOMEPLANUUID"
+                   "name" : "Foo Plan"
+                   "description" : "I'm a reseller",
+                 }
+            """).strip())
+        raise ValueError("Missing Required Data")
+
+
+    result = set_reseller(parsed_args.resellerdict, parsed_args.target, printer=printer)
+
+    printer("I've never seen this work.\n"
+            "If you're reading this, it worked for you.\n"
+            "I've been piping the output of get_reseller through jq to make a change and then pipping that output into this snac.\n"
+            "Consider letting me know what you did so I can update the help accordingly.\n")
+
+    print(result)
+
 
 def get_device_reseller(serial, target, printer=StatusPrinter()):
 
@@ -281,7 +452,7 @@ def get_device_reseller(serial, target, printer=StatusPrinter()):
 
 def print_device_reseller():
 
-    parsed_args = parse(Arg.serial, Arg.target)
+    parsed_args = parse(Parseable.serial, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -334,36 +505,9 @@ def set_device_reseller(serial, target, target_reseller, printer=StatusPrinter()
             else:
                 raise ValueError("Expected 1 change to device_provision, instead got {}".format(rows_changed))
 
-def get_reseller(reseller, target, printer=StatusPrinter()):
-
-    printer("Finding reseller {}'s identifiers according to {}".format(reseller, target.get_name()))
-    with Indent(printer):
-
-        if is_uuid(reseller):
-            q = Query(target, 'metaRO', 'test321',
-                    """
-                    SELECT id as db_id, uuid as id, name, parent_id
-                    FROM reseller
-                    WHERE uuid = '{}';
-                    """.format(reseller))
-        else:
-            q = Query(target, 'metaRO', 'test321',
-                    """
-                    SELECT id as db_id, uuid as id, name, parent_id
-                    FROM reseller
-                    WHERE id = {};
-                    """.format(reseller))
-
-    reseller = q.execute(Feedback.OneRow, lambda row : Reseller(row), printer=printer)
-
-    if not reseller:
-        printer("No such reseller found on {}".format(target.get_name()))
-
-    return reseller
-
 def print_set_device_reseller():
 
-    parsed_args = parse(Arg.serial, Arg.target, Arg.reseller)
+    parsed_args = parse(Parseable.serial, Parseable.target, Parseable.reseller)
     printer = StatusPrinter(indent=0)
 
     printer("Setting device: {}'s reseller to {}".format(parsed_args.serial, parsed_args.reseller))
@@ -375,7 +519,7 @@ def print_set_device_reseller():
 
 def print_merchant_reseller():
 
-    parsed_args = parse(Arg.merchant, Arg.target)
+    parsed_args = parse(Parseable.merchant, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -410,7 +554,7 @@ def get_activation_code(target, serial, printer=StatusPrinter()):
 
 def print_activation_code():
 
-    parsed_args = parse(Arg.serial, Arg.target)
+    parsed_args = parse(Parseable.serial, Parseable.target)
     printer = StatusPrinter(indent=0)
     printer("Getting Activation Code")
 
@@ -435,7 +579,7 @@ def get_acceptedness(target, merchant_id, printer=StatusPrinter()):
 
 def print_acceptedness():
 
-    parsed_args = parse(Arg.merchant, Arg.target)
+    parsed_args = parse(Parseable.merchant, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     merchant = get_merchant(parsed_args.merchant, parsed_args.target)
@@ -525,7 +669,7 @@ def set_activation_code(target, serial, value, printer=StatusPrinter()):
 
 def print_set_activation():
 
-    parsed_args = parse(Arg.serial, Arg.target, Arg.code)
+    parsed_args = parse(Parseable.serial, Parseable.target, Parseable.code)
     printer = StatusPrinter(indent=0)
 
     printer("Setting Activation Code to {}".format(parsed_args.code))
@@ -563,7 +707,7 @@ def describe_increment_last_activation_code(target, serial, printer=StatusPrinte
 
 def print_refresh_activation():
 
-    parsed_args = parse(Arg.serial, Arg.target)
+    parsed_args = parse(Parseable.serial, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Refreshing Activation Code")
@@ -588,7 +732,7 @@ def print_refresh_activation():
 
 def unaccept():
 
-    parsed_args = parse(Arg.merchant, Arg.target)
+    parsed_args = parse(Parseable.merchant, Parseable.target)
     printer = StatusPrinter(indent=0)
     printer("Clearing Terms Acceptance")
 
@@ -604,7 +748,7 @@ def unaccept():
 
 def accept():
 
-    parsed_args = parse(Arg.merchant, Arg.target)
+    parsed_args = parse(Parseable.merchant, Parseable.target)
     printer = StatusPrinter()
 
 
@@ -643,7 +787,7 @@ def get_auth_token(target, url, printer=StatusPrinter()):
 # deprovision device from merchant
 def deprovision():
 
-    parsed_args = parse(Arg.serial, Arg.target)
+    parsed_args = parse(Parseable.serial, Parseable.target)
     printer = StatusPrinter(indent=0)
     printer("Deprovisioning Device")
     with Indent(printer):
@@ -691,7 +835,7 @@ def deprovision():
 # provision device for merchant
 def provision():
 
-    parsed_args = parse(Arg.serial, Arg.cpuid, Arg.target, Arg.merchant)
+    parsed_args = parse(Parseable.serial, Parseable.cpuid, Parseable.target, Parseable.merchant)
     printer = StatusPrinter(indent=0)
     printer("Provisioning Device")
     with Indent(printer):
@@ -753,7 +897,6 @@ us_xml = """
     <MerchantNumber>{mid}</MerchantNumber>
     <BEMerchantNumber>{bemid}</BEMerchantNumber>
     <Platform>N</Platform>
-    <Sys-Prin>/</Sys-Prin>
     <DBAName>{merchant_str}</DBAName>
     <LegalName>{merchant_str}</LegalName>
     <Address1>100 Penny Lane</Address1>
@@ -765,7 +908,6 @@ us_xml = """
     <PhoneNumber>1111111111</PhoneNumber>
     <Email>{merchant_str}@dev.null.com</Email>
     <Contact>Nowhere Man</Contact>
-    <BankMarker>123</BankMarker>
     <MCCCode>5999</MCCCode>
     <IndustryCode>5999</IndustryCode>
     <Currency>USD</Currency>
@@ -777,8 +919,6 @@ us_xml = """
     <DDAAccountNumber>123444449000</DDAAccountNumber>
     <Business>177123456994</Business>
        <Bank>846980100883</Bank>
-    <Agent>1</Agent>
-    <Chain>846217707000</Chain>
     <Corp />
     <Chain>177208700993</Chain>
     <ACHBankID>ACH123</ACHBankID>
@@ -866,7 +1006,7 @@ us_xml = """
     </Device>
     <Device productType="AOAN"><DeviceType>Tablet</DeviceType><ProductName>Clover Station</ProductName>
                <TerminalID/><ProcessingNetwork>Nashville</ProcessingNetwork><DatawireID/><AutoCloseHour/>
-               <CloseMethod/><SerialNumber/><CloverVersion/><Status>Active</Status><BundleIndicator>P03</BundleIndicator>
+               <CloseMethod/><SerialNumber/><CloverVersion/><Status>Active</Status>
                <EquipmentNumber>
                10455215720011</EquipmentNumber><SerialNumber>C010UQ63567777</SerialNumber><BusinessType>Z</BusinessType><TransArmorInd/><ForceCloseTime>24
                </ForceCloseTime></Device>
@@ -905,7 +1045,6 @@ eu_xml = """
       <phoneNumber>1234567890</phoneNumber>
       <email>{merchant_str}@notavalidaddress.com</email>
     </contactInformation>
-    <reseller>FDMS-NGPOS</reseller>
     <currency>EUR</currency>
     <timeZone>Pacific/Samoa</timeZone>
     <supportPhone>1234567890</supportPhone>
@@ -926,20 +1065,34 @@ eu_xml = """
 </CloverBoardingRequest>
 """
 
-def create_merchant(target, reseller, printer=StatusPrinter()):
+def create_merchant(target, region, reseller, printer=StatusPrinter()):
 
     unique_str = str(datetime.datetime.utcnow().strftime('%s'))
-    merchant_str = "merchant_" + unique_str
+    merchant_str = "merchant_" + unique_str + "BOARD_TO_SHARD_0"
     mid = int(unique_str)
     bemid = 8000000000 - mid
 
-    # path=eu_path
-    # template=eu_xml
+    if str(region) == 'US':
+        toplevel='XMLRequest'
+        path=us_path
+        template=us_xml
+    elif str(region) == 'EU':
+        toplevel='CloverBoardingRequest'
+        path=eu_path
+        template=eu_xml
+    else:
+        raise ValueError("Unknown country code: {}".format(region))
 
-    path=us_path
-    template=us_xml
+    xml_d = xmltodict.parse(template.format(**locals()))
 
-    xml=template.format(**locals())
+    # use reseller's first channel if defined, otherwise use reseller uuid
+    tag, value = list(reseller.channel.items())[0]
+
+    xml_d[toplevel]['MerchantDetail'][tag] = value
+
+    xml = xmltodict.unparse(xml_d)
+
+    printer(xml)
 
     endpoint = '{}://{}:{}{}'.format(
                 target.get_hypertext_protocol(),
@@ -954,7 +1107,13 @@ def create_merchant(target, reseller, printer=StatusPrinter()):
     data = xml
 
     response = post(endpoint, headers, data, printer=printer)
-    response_dict = xmltodict.parse(response.content.decode('utf-8'))
+
+    content = response.content.decode('utf-8')
+    if 'prior placement' in content:
+        raise Exception("The remote server tried to board this merchant to a nonexistent shard, maybe try again a few times.")
+
+
+    response_dict = xmltodict.parse(content)
     return response_dict['XMLResponse']['Merchant']['UUID']
 
 # return true if desired state is achieved
@@ -963,7 +1122,7 @@ def set_merchant_reseller(merchant, target, target_reseller, printer=StatusPrint
 
     printer("Checking the merchant's current reseller")
     with Indent(printer):
-        current_reseller = get_reseller(merchant.reseller_id, target, printer)
+        current_reseller = get_reseller(merchant.reseller_id, target, printer=printer)
 
     # don't modify if desired value is already set
     if int(current_reseller.db_id) == int(target_reseller.db_id):
@@ -994,7 +1153,7 @@ def set_merchant_reseller(merchant, target, target_reseller, printer=StatusPrint
 
 def print_set_merchant_reseller():
 
-    parsed_args = parse(Arg.merchant, Arg.target, Arg.reseller)
+    parsed_args = parse(Parseable.merchant, Parseable.reseller, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Setting the merchant's reseller to {}".format(parsed_args.reseller))
@@ -1008,23 +1167,22 @@ def print_set_merchant_reseller():
 
 def print_new_merchant():
 
-    parsed_args = parse(Arg.target, Arg.reseller)
+    parsed_args = parse(Parseable.region, Parseable.reseller, Parseable.partner_control_match_criteria, Parseable.target)
     printer = StatusPrinter(indent=0)
+
     printer("Creating New Merchant")
     with Indent(printer):
-        uid = create_merchant(parsed_args.target, parsed_args.reseller, printer=printer)
+        if parsed_args.partnercontrolmatchcriteria:
+            reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=False, printer=printer)
+            reseller.channel = {}
+            reseller.channel.update(parsed_args.partnercontrolmatchcriteria)
+        else:
+            reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=True, printer=printer)
+        uid = create_merchant(parsed_args.target, parsed_args.region, reseller, printer=printer)
         merchant = get_merchant(uid, parsed_args.target, printer=printer)
 
-    printer("Setting Merchant Reseller")
-    with Indent(printer):
-        if merchant:
-            printer("Target Reseller")
-            reseller = get_reseller(parsed_args.reseller, parsed_args.target)
-            if reseller:
-                set_merchant_reseller(merchant, parsed_args.target, reseller)
-
     if merchant:
-        print(uid)
+        print(merchant)
 
 def get_plan_groups(target, printer=StatusPrinter()):
 
@@ -1044,7 +1202,7 @@ def get_plan_groups(target, printer=StatusPrinter()):
 
 def print_plan_groups():
 
-    parsed_args = parse(Arg.target)
+    parsed_args = parse(Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Getting plan groups according to {}".format(parsed_args.target.get_name()))
@@ -1081,7 +1239,7 @@ def get_plan_group(plan_group, target, printer=StatusPrinter()):
 
 def print_plan_group():
 
-    parsed_args = parse(Arg.plan_group, Arg.target)
+    parsed_args = parse(Parseable.plan_group, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -1122,7 +1280,7 @@ def create_plan_group(name, target, trial_days=None, enforce_plan_assignment=Fal
 
 def print_new_plan_group():
 
-    parsed_args = parse(Arg.name, Arg.trial_days, Arg.enforce_plan_assignment, Arg.target)
+    parsed_args = parse(Parseable.name, Parseable.trial_days, Parseable.enforce_plan_assignment, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     printer("Creating a plan group on {}".format(parsed_args.target.get_name()))
@@ -1187,7 +1345,7 @@ def get_plan(plan, target, printer=StatusPrinter(), identifiers_only=False):
 
 def print_get_plan():
 
-    parsed_args = parse(Arg.plan, Arg.target)
+    parsed_args = parse(Parseable.plan, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     try:
@@ -1256,7 +1414,7 @@ def new_plan(plan_dict, target, printer=StatusPrinter()):
 
 def print_new_plan():
 
-    parsed_args = parse(Arg.plan_dict, Arg.target)
+    parsed_args = parse(Parseable.plan_dict, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     if 'db_id' in parsed_args.plandict or 'id' in parsed_args.plandict:
@@ -1314,11 +1472,14 @@ def set_plan(plan_dict, target, printer=StatusPrinter()):
 
 def print_set_plan():
 
-    parsed_args = parse(Arg.plan_dict, Arg.target)
+    parsed_args = parse(Parseable.plan_dict, Parseable.target)
     printer = StatusPrinter(indent=0)
 
     if 'id' in parsed_args.plandict:
         plan = get_plan(parsed_args.plandict['id'], parsed_args.target, printer)
+    elif 'db_id' in parsed_args.plandict:
+        plan = get_plan(parsed_args.plandict['db_id'], parsed_args.target, printer)
+        parsed_args.plandict['id'] = plan.id
     else:
         printer(textwrap.dedent(
             """It is not clear which plan you want to update, maybe try new_plan?
@@ -1335,3 +1496,258 @@ def print_set_plan():
     result = set_plan(parsed_args.plandict, parsed_args.target, printer=printer)
 
     print(result)
+
+def get_partner_controls(target, printer=StatusPrinter()):
+
+    endpoint = '{}://{}:{}/v3/partner_controls'.format(
+                target.get_hypertext_protocol(),
+                target.get_hostname(),
+                target.get_http_port())
+
+    headers = { 'Accept' : '*/*',
+                'Cookie' : internal_auth(target, printer=printer) }
+
+    response = get(endpoint, headers, printer=printer)
+
+    partner_controls = json.loads(response.content.decode('utf-8'))
+
+    return partner_controls
+
+def print_partner_controls():
+
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Getting partner controls according to {}".format(parsed_args.target.get_name()))
+    with Indent(printer):
+        partner_controls_dict = get_partner_controls(parsed_args.target, printer=printer)
+
+    output = json.dumps(partner_controls_dict['elements'])
+
+    printer('')
+    print_or_warn(output, max_length=500)
+
+def get_partner_control(partner_control, target, printer=StatusPrinter(), identifiers_only=False):
+    printer("Finding partner_control {}'s identifiers according to {}".format(partner_control, target.get_name()))
+    with Indent(printer):
+        if is_uuid(partner_control):
+            ident='uuid'
+        else:
+            ident='id'
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id as db_id, uuid as id
+                FROM partner_control
+                WHERE {} = '{}';
+                """.format(ident, partner_control))
+
+        partner_control = q.execute(Feedback.OneRow, lambda row : PartnerControl(row), printer=printer)
+
+    if identifiers_only:
+        return partner_control
+
+    printer("Getting partner control {} from {}".format(partner_control, target.get_name()))
+    with Indent(printer):
+
+        path='v3/partner_controls/{}'.format(partner_control.id)
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json ',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        response = get(endpoint, headers, printer=printer)
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("GET on {} returned code {}".format(endpoint, response.status_code))
+
+        partner_control.apply_response(json.loads(response.content.decode('utf-8')))
+
+        return partner_control
+
+def print_get_partner_control():
+
+    parsed_args = parse(Parseable.partner_control, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        partner_control = get_partner_control(parsed_args.partnercontrol, parsed_args.target, printer=printer)
+        printer('')
+        print_or_warn(str(partner_control), max_length=500)
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+
+def create_partner_control(partner_control_dict, target, printer=StatusPrinter()):
+
+    printer("[Creating a partner control from supplied json]")
+    with Indent(printer):
+
+        path='v3/partner_controls'
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+
+        data = partner_control_dict
+
+        response = post(endpoint, headers, data, printer=printer)
+
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+
+        return json.loads(response.content.decode('utf-8'))
+
+
+def print_new_partner_control():
+    parsed_args = parse(Parseable.partner_control_dict, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    if 'db_id' in parsed_args.partnercontroldict or 'id' in parsed_args.partnercontroldict:
+        raise Exception("Partner control description has a db_id or an id, can't create it if it already exists\n"
+                        "Maybe try set_partner_control ?")
+
+    result = create_partner_control(parsed_args.partnercontroldict, parsed_args.target, printer=printer)
+
+    print(json.dumps(result))
+
+
+def set_partner_control(partner_control_dict, target, printer=StatusPrinter()):
+
+    printer("[Updating partner_control from supplied json]")
+    with Indent(printer):
+
+        path='v3/partner_controls/{}'.format(partner_control_dict['id'])
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        data = partner_control_dict
+
+        response = put(endpoint, headers, data, printer=printer)
+
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+
+        return json.loads(response.content.decode('utf-8'))
+
+def print_set_partner_control():
+
+    parsed_args = parse(Parseable.partner_control_dict, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    if 'id' in parsed_args.partnercontroldict:
+        partner_control = get_partner_control(parsed_args.partnercontroldict['id'], parsed_args.target, printer)
+    elif 'db_id' in parsed_args.partnercontroldict:
+        partner_control = get_partner_control(parsed_args.partnercontroldict['db_id'], parsed_args.target, printer)
+        parsed_args.partnercontroldict['id'] = partner_control.id
+    else:
+        printer(textwrap.dedent(
+            """It is not clear which partner control you want to update, maybe try new_partner_control?
+               Otherwise, specify either 'db_id' or 'id' (uuid) in the json, like so:
+                 {
+                   "id" : "SOMEPLANUUID"
+                   "name" : "Foo PartnerControl"
+                   "description" : "I'm a partner control",
+                 }
+            """).strip())
+        raise ValueError("Missing Required Data")
+
+
+    result = set_partner_control(parsed_args.partnercontroldict, parsed_args.target, printer=printer)
+
+    print(result)
+
+def get_partner_control_plan(partner_control, target, printer=StatusPrinter()):
+
+    printer("[Getting partner_control from supplied json]")
+    with Indent(printer):
+
+        path='v3/partner_controls/{}?expand=plan'.format(partner_control.id)
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        response = get(endpoint, headers, printer=printer)
+
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+
+        return json.loads(response.content.decode('utf-8'))['plan']
+
+def print_get_partner_control_plan():
+
+    parsed_args = parse(Parseable.partner_control, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    partner_control = get_partner_control(parsed_args.partnercontrol, parsed_args.target, printer=printer)
+
+    result = get_partner_control_plan(partner_control, parsed_args.target, printer=printer)
+
+    print(result)
+
+def set_partner_control_plan(partner_control, plan, target, printer=StatusPrinter()):
+
+    printer("[Setting partner_control to board to plan {}]".format(partner_control, plan))
+    with Indent(printer):
+
+        path='v3/partner_controls/{}/merchant_plan/{}'.format(partner_control.id, plan.id)
+
+        endpoint = '{}://{}:{}/{}'.format(
+                    target.get_hypertext_protocol(),
+                    target.get_hostname(),
+                    target.get_http_port(),
+                    path)
+
+        headers = { 'Content-Type' : 'application/json',
+                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
+                      'Connection' : 'keep-alive',
+                          'Cookie' : internal_auth(target, printer=printer) }
+
+        response = post(endpoint, headers, {}, printer=printer)
+
+        if response.status_code < 200 or response.status_code > 299:
+            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+
+def print_set_partner_control_plan():
+
+    parsed_args = parse(Parseable.partner_control, Parseable.plan, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    partner_control = get_partner_control(parsed_args.partnercontrol, parsed_args.target, printer=printer)
+
+    plan = get_plan(parsed_args.plan, parsed_args.target, printer=printer)
+
+    set_partner_control_plan(partner_control, plan, parsed_args.target, printer=printer)
