@@ -128,6 +128,15 @@ class EnforcePlanAssignment(_IParseable):
         value = getattr(parser, field_name(self))
         return value
 
+class All(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument('-a', '--'+field_name(self), action='store_true', help="show deleted/uninstalled too")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
 class Reseller(_IParseable):
 
     def preparse(self, parser):
@@ -361,6 +370,7 @@ class Parseable(Enum):
     partner_control_dict=PartnerControlDict
     name = Name
     partner_control_match_criteria = PartnerControlMatchCriteria
+    showall = All
 
 # given a list of parsables, return a namedtuple containing their results
 def parse(*parsables, description=None):
@@ -371,34 +381,40 @@ def parse(*parsables, description=None):
         argparseargs['description'] = description
 
     parser = ArgumentParser(**argparseargs)
-    # replace enums with underlying classes
-    parsables = [ x.value() for x in parsables ]
 
-    container_name = ""
-    field_list = ""
-    for parsable in parsables:
+    if parsables:
 
-        # gather names
-        container_name += container_name_component(parsable)
-        field_list += " " + field_name(parsable)
+        # replace enums with underlying classes
+        parsables = [ x.value() for x in parsables ]
 
-        # prepare the parser
-        parsable.preparse(parser)
+        container_name = ""
+        field_list = ""
+        for parsable in parsables:
 
-    # remove leading space
-    field_list.strip()
+            # gather names
+            container_name += container_name_component(parsable)
+            field_list += " " + field_name(parsable)
+
+            # prepare the parser
+            parsable.preparse(parser)
+
+        # remove leading space
+        field_list.strip()
 
     # parse from the command line
     parsed = parser.parse_args()
 
     # prepare results
-    results = []
-    for parsable in parsables:
-        results.append(parsable.get_val(parsed))
+    if parsables:
+        results = []
+        for parsable in parsables:
+            results.append(parsable.get_val(parsed))
+        # wrap and return them
+        ContainerType = namedtuple(container_name, field_list)
+        return ContainerType(*results)
+    else:
+        return None
 
-    # wrap and return them
-    ContainerType = namedtuple(container_name, field_list)
-    return ContainerType(*results)
 
 def clistring():
     snac = os.path.basename(sys.argv[0])

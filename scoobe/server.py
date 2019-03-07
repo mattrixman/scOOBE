@@ -11,105 +11,10 @@ from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
 from scoobe.cli import parse, print_or_warn, Parseable, Region
 from scoobe.common import StatusPrinter, Indent
-from scoobe.http import get, put, post
+from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth
 from scoobe.ssh import SshConfig, UserPass
 from scoobe.mysql import Query, Feedback
 from scoobe.properties import LocalServer
-
-def get_creds(printer=StatusPrinter()):
-
-    user_exists = False
-    user_var='LDAP_USER'
-    if user_var in os.environ:
-        user = os.environ[user_var]
-        user_exists = True
-    # else: warn later so we can warn for both
-
-    passwd_exists=False
-    passwd_var='LDAP_PASSWORD'
-    if passwd_var in os.environ:
-        passwd = os.environ[passwd_var]
-        passwd_exists = True
-    # else: warn later so we can warn for both
-
-    try:
-        return UserPass(user, passwd)
-    except NameError:
-        with Indent(printer):
-            printer("Please set environment variables:")
-            with Indent(printer):
-
-                if not user_exists:
-                    printer(user_var)
-                    with Indent(printer):
-                        printer("(try typing: 'export {}=<your_username>' and rerunning the command)".format(
-                            user_var))
-
-                if not passwd_exists:
-                    printer(passwd_var)
-                    with Indent(printer):
-                        printer("(try typing: \'read -s {} && export {}\', ".format(passwd_var, passwd_var),
-                                "typing your password, and rerunning the command)")
-                if not (user_exists and passwd_exists):
-                    sys.exit(100)
-
-def internal_auth(target,
-                  creds = {'username' : 'joe.blow',
-                           'password' : 'letmein' },
-                  printer=StatusPrinter()):
-
-
-    endpoint = '{}://{}/cos/v1/dashboard/internal/login'.format(
-                target.get_hypertext_protocol(),
-                target.get_hostname() + ":" + str(target.get_http_port()))
-
-    headers = { 'Content-Type' : 'application/json ',
-                      'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                  'Connection' : 'keep-alive' }
-
-    data = creds
-
-    # first try with with a nonsense user
-    printer("Attempting cloverDevAuth")
-    with Indent(printer):
-        response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
-
-    if response.status_code == 200:
-        return response.headers['set-cookie']
-
-    # if that fails, use a real one
-    elif response.status_code == 401:
-        printer("{} has cloverDevAuth unset or false, looking for real credentials".format(target.get_name()))
-
-        creds = get_creds(printer=printer)
-        data = {'username' : creds.user,
-                'password' : creds.passwd}
-
-        with Indent(printer):
-            response = post(endpoint, headers, data, obfuscate_pass=True, printer=printer)
-
-            if response.status_code == 200:
-                return response.headers['set-cookie']
-            else:
-                raise Exception("Unexpected response from login endpoint")
-
-def print_cookie():
-    parsed_args = parse(Parseable.target)
-    printer = StatusPrinter(indent=0)
-
-    printer("Getting a login cookie from {}".format(parsed_args.target.get_name()))
-    with Indent(printer):
-        cookie = internal_auth(parsed_args.target, printer=printer)
-
-    if cookie:
-        print(cookie)
-
-
-
-def is_uuid(string):
-    if re.match(r'[A-Za-z0-9]{13}', str(string)):
-        return True
-    return False
 
 class ServerObject:
     def __str__(self):
@@ -170,6 +75,22 @@ class PartnerControl(ServerObject):
                 setattr(self, key, content[key])
             except KeyError:
                 pass
+
+def print_cookie():
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Getting a login cookie from {}".format(parsed_args.target.get_name()))
+    with Indent(printer):
+        cookie = internal_auth(parsed_args.target, printer=printer)
+
+    if cookie:
+        print(cookie)
+
+def is_uuid(string):
+    if re.match(r'[A-Za-z0-9]{13}', str(string)):
+        return True
+    return False
 
 # given a merchant id or a merchant uuid, get both
 def get_merchant(merchant, target, printer=StatusPrinter()):
@@ -1186,17 +1107,9 @@ def print_new_merchant():
 
 def get_plan_groups(target, printer=StatusPrinter()):
 
-    endpoint = '{}://{}:{}/v3/merchant_plan_groups'.format(
-                target.get_hypertext_protocol(),
-                target.get_hostname(),
-                target.get_http_port())
-
-    headers = { 'Accept' : '*/*',
-                'Cookie' : internal_auth(target, printer=printer) }
-
-    response = get(endpoint, headers, printer=printer)
-
-    plan_group_dict = json.loads(response.content.decode('utf-8'))
+    printer("Finding plan_groups according to {}".format(target.get_name()))
+    with Indent(printer):
+        return get_response_as_dict('v3/merchant_plan_groups', target, descend_once=None, printer=printer)
 
     return plan_group_dict
 
@@ -1256,27 +1169,11 @@ def create_plan_group(name, target, trial_days=None, enforce_plan_assignment=Fal
 
         path='v3/merchant_plan_groups'
 
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json ',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
         data = { "name"              : name,
                  "enforceAssignment" : enforce_plan_assignment,
                  "trialDays"         : trial_days }
 
-        response = post(endpoint, headers, data, printer=printer)
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))
-
+        return post_response_as_dict(path, target, data, printer=printer)
 
 def print_new_plan_group():
 
@@ -1324,24 +1221,10 @@ def get_plan(plan, target, printer=StatusPrinter(), identifiers_only=False):
         path='v3/merchant_plan_groups/{}/merchant_plans/{}'.format(
             plan_group.id, plan.id)
 
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json ',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-        response = get(endpoint, headers, printer=printer)
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("GET on {} returned code {}".format(endpoint, response.status_code))
-
-        plan.apply_response(json.loads(response.content.decode('utf-8')))
+        plan.apply_response(get_response_as_dict(path, target, descend_once=None, printer=printer))
 
         return plan
+
 
 def print_get_plan():
 
@@ -1391,26 +1274,7 @@ def new_plan(plan_dict, target, printer=StatusPrinter()):
                 """).strip())
             raise e
 
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-
-        data = plan_dict
-
-        response = post(endpoint, headers, data, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))
+        return post_response_as_dict(path, target, plan_dict, printer=printer)
 
 def print_new_plan():
 
@@ -1449,26 +1313,7 @@ def set_plan(plan_dict, target, printer=StatusPrinter()):
                 """).strip())
             raise e
 
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-
-        data = plan_dict
-
-        response = put(endpoint, headers, data, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))
+        return put_response_as_dict(path, target, plan_dict, printer=printer)
 
 def print_set_plan():
 
@@ -1499,19 +1344,9 @@ def print_set_plan():
 
 def get_partner_controls(target, printer=StatusPrinter()):
 
-    endpoint = '{}://{}:{}/v3/partner_controls'.format(
-                target.get_hypertext_protocol(),
-                target.get_hostname(),
-                target.get_http_port())
-
-    headers = { 'Accept' : '*/*',
-                'Cookie' : internal_auth(target, printer=printer) }
-
-    response = get(endpoint, headers, printer=printer)
-
-    partner_controls = json.loads(response.content.decode('utf-8'))
-
-    return partner_controls
+    printer("Finding partner_controls identifiers according to {}".format(target.get_name()))
+    with Indent(printer):
+        return get_response_as_dict('v3/partner_controls', target, descend_once=None, printer=printer)
 
 def print_partner_controls():
 
@@ -1551,24 +1386,8 @@ def get_partner_control(partner_control, target, printer=StatusPrinter(), identi
     with Indent(printer):
 
         path='v3/partner_controls/{}'.format(partner_control.id)
-
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json ',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-        response = get(endpoint, headers, printer=printer)
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("GET on {} returned code {}".format(endpoint, response.status_code))
-
-        partner_control.apply_response(json.loads(response.content.decode('utf-8')))
-
+        partner_control.apply_response(
+            get_response_as_dict(path, target, descend_once=None, printer=printer))
         return partner_control
 
 def print_get_partner_control():
@@ -1590,29 +1409,7 @@ def create_partner_control(partner_control_dict, target, printer=StatusPrinter()
 
     printer("[Creating a partner control from supplied json]")
     with Indent(printer):
-
-        path='v3/partner_controls'
-
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-
-        data = partner_control_dict
-
-        response = post(endpoint, headers, data, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))
+        return post_response_as_dict('v3/partner_controls', target, partner_control_dict)
 
 
 def print_new_partner_control():
@@ -1632,28 +1429,8 @@ def set_partner_control(partner_control_dict, target, printer=StatusPrinter()):
 
     printer("[Updating partner_control from supplied json]")
     with Indent(printer):
-
         path='v3/partner_controls/{}'.format(partner_control_dict['id'])
-
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-        data = partner_control_dict
-
-        response = put(endpoint, headers, data, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))
+        return put_response_as_dict(path, target, partner_control_dict, printer=printer);
 
 def print_set_partner_control():
 
@@ -1688,24 +1465,7 @@ def get_partner_control_plan(partner_control, target, printer=StatusPrinter()):
     with Indent(printer):
 
         path='v3/partner_controls/{}?expand=plan'.format(partner_control.id)
-
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-        response = get(endpoint, headers, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
-
-        return json.loads(response.content.decode('utf-8'))['plan']
+        return get_response_as_dict(path, target, descend_once='plan', printer=printer)
 
 def print_get_partner_control_plan():
 
@@ -1718,36 +1478,93 @@ def print_get_partner_control_plan():
 
     print(result)
 
-def set_partner_control_plan(partner_control, plan, target, printer=StatusPrinter()):
+def set_partner_control_plan(partner_control, target, plan, printer=StatusPrinter()):
 
     printer("[Setting partner_control to board to plan {}]".format(partner_control, plan))
     with Indent(printer):
 
         path='v3/partner_controls/{}/merchant_plan/{}'.format(partner_control.id, plan.id)
-
-        endpoint = '{}://{}:{}/{}'.format(
-                    target.get_hypertext_protocol(),
-                    target.get_hostname(),
-                    target.get_http_port(),
-                    path)
-
-        headers = { 'Content-Type' : 'application/json',
-                          'Accept' : 'application/json, text/javascript, */*; q=0.01',
-                      'Connection' : 'keep-alive',
-                          'Cookie' : internal_auth(target, printer=printer) }
-
-        response = post(endpoint, headers, {}, printer=printer)
-
-        if response.status_code < 200 or response.status_code > 299:
-            raise Exception("POST on {} returned code {}".format(endpoint, response.status_code))
+        return post_response_as_dict(path, target, {}, printer=printer)
 
 def print_set_partner_control_plan():
 
-    parsed_args = parse(Parseable.partner_control, Parseable.plan, Parseable.target)
+    parsed_args = parse(Parseable.partner_control, Parseable.target, Parseable.plan)
     printer = StatusPrinter(indent=0)
 
     partner_control = get_partner_control(parsed_args.partnercontrol, parsed_args.target, printer=printer)
 
     plan = get_plan(parsed_args.plan, parsed_args.target, printer=printer)
 
-    set_partner_control_plan(partner_control, plan, parsed_args.target, printer=printer)
+    set_partner_control_plan(partner_control, parsed_args.target, plan, printer=printer)
+
+def register_device(serial, cpuid, target, printer=StatusPrinter()):
+    printer("Registering device: ({},{}) with {}".format(serial, cpuid, target.get_name()))
+    with Indent(printer):
+        q = Query(target, 'metaRW', 'test789',
+                """
+                INSERT IGNORE INTO device_provision (serial_number, chip_uid)
+                VALUES ('{}', '{}');
+                """.format(serial, cpuid))
+        q.execute(Feedback.ChangeCount, printer=printer)
+
+        q = Query(target, 'metaRW', 'test789',
+                """
+                UPDATE device_provision
+                SET last_activation_code='11111111', activation_code='11111111'
+                WHERE serial_number = '{}';
+                """.format(serial))
+        q.execute(Feedback.ChangeCount, printer=printer)
+
+def print_register_device():
+    parsed_args = parse(Parseable.serial, Parseable.cpuid, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    register_device(parsed_args.serial, parsed_args.cpuid, parsed_args.target, printer=printer)
+
+def get_merchant_apps(merchant, target, show_all=False, printer=StatusPrinter()):
+    printer("Getting merchant {}'s apps from {}".format(merchant.id, target.get_name()))
+    with Indent(printer):
+
+        path='v3/merchants/{}/apps'.format(merchant.id)
+        if not show_all:
+            path += '?filter=installed=true'
+
+        return get_response_as_dict(path, target, printer=printer)
+
+def print_get_merchant_apps():
+
+    parsed_args = parse(Parseable.merchant, Parseable.showall, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        merchant = get_merchant(parsed_args.merchant, parsed_args.target, printer=printer)
+        apps = get_merchant_apps(merchant, parsed_args.target, show_all=parsed_args.all, printer=printer)
+
+        printer('')
+        print_or_warn(json.dumps(apps), max_length=500)
+
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+def get_apps(target, printer=StatusPrinter()):
+    printer("Getting all apps from {}".format(target.get_name()))
+    with Indent(printer):
+        return get_response_as_dict('v3/apps', target, printer=printer)
+
+def print_get_apps():
+
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        apps = get_apps(parsed_args.target, printer=printer)
+
+        printer('')
+        print_or_warn(json.dumps(apps), max_length=500)
+
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)

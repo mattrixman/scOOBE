@@ -1,17 +1,19 @@
 import re
 import itertools
 import sys
+import os
 import sh
 import json
 import ifaddr
 import ipaddress
 from scoobe.common import StatusPrinter, Indent
-from scoobe.cli import parse, Parsable
+from scoobe.cli import parse, Parseable
 from collections import namedtuple
 from sortedcontainers import SortedDict
 from enum import Enum
 from itertools import product as cross_product
-from sh import adb, sed, sort, grep, egrep, sleep, head, ping
+from sh import adb, sed, sort, grep, egrep, sleep, head, ping, rm
+from datetime import datetime
 
 def print_info():
     printer = StatusPrinter(indent=0)
@@ -89,7 +91,6 @@ def get_cpuid(codename):
         return  sorted(list(sed(adb.shell('getprop'), '-n',
                 r's/^.*cpuid.*\[\([0-9a-fA-F]\{32\}\).*$/\1/p')))[-1].strip()
 
-
 def get_connected_device(printer=StatusPrinter()):
     wait_ready(printer)
 
@@ -112,6 +113,31 @@ def get_connected_device(printer=StatusPrinter()):
     printer("Found attached device: " + str(device))
 
     return device
+
+def screenshot(device, printer=StatusPrinter()):
+    printer("Dumping screenshot for Device: {}".format(device.serial))
+    with Indent(printer):
+
+        # make way for new file
+        outfile_name = "{}_{}.png".format(device.serial,
+                                          datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+        outfile_path = os.path.join(os.getcwd(), outfile_name)
+        rm('-f', outfile_path)
+
+        # get the screencap
+        tempfile_path = '/sdcard/{}'.format(outfile_name)
+        adb.shell('screencap', '-p', tempfile_path)
+        adb.pull(tempfile_path)
+        adb.shell('rm', tempfile_path)
+
+        printer("Wrote " + outfile_path)
+
+def print_screenshot():
+    parsed_args = parse(description="Dump the current screen of the connected device to a png file")
+    printer = StatusPrinter(indent=0)
+
+    device = get_connected_device(printer=printer)
+    screenshot(device, printer=printer)
 
 # base class for devices
 class Device:

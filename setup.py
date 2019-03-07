@@ -33,6 +33,9 @@ setup(name='scoobe',
           # print the device's cpu id
           'device_cpuid = scoobe.device:print_cpuid',
 
+          # dump the device screen to png
+          'screenshot = scoobe.device:print_screenshot',
+
           # find an IP address pair that can ping the other.
           # One goes with a network interface on the device,
           # the other that goes with a network interface on localhost.
@@ -46,6 +49,9 @@ setup(name='scoobe',
 
           # given a serial number and a server, see which merchant the server thinks the device goes with
           'device_merchant = scoobe.server:print_device_merchant',
+
+          # given a serial number and a server, see which merchant the server thinks the device goes with
+          'register_device = scoobe.server:print_register_device',
 
           # given a merchant uuid or a merchant id, print the other
           'merchant = scoobe.server:print_merchant',
@@ -142,5 +148,11 @@ setup(name='scoobe',
 
           # update an existing reseller from json
           'set_reseller = scoobe.server:print_set_reseller',
+
+          # list the merchant's installed apps
+          'merchant_apps = scoobe.server:print_get_merchant_apps',
+
+          # list the available apps
+          'apps = scoobe.server:print_get_apps'
 
           ]})
