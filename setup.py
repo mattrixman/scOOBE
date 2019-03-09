@@ -153,6 +153,27 @@ setup(name='scoobe',
           'merchant_apps = scoobe.server:print_get_merchant_apps',
 
           # list the available apps
-          'apps = scoobe.server:print_get_apps'
+          'apps = scoobe.server:print_get_apps',
+
+          # list the configured event subscriptions
+          'event_subscriptions = scoobe.server:print_get_event_subscriptions',
+
+          # show details for the configured event subscription
+          'event_subscription = scoobe.server:print_get_event_subscription',
+
+          # create a new event subscription
+          'new_event_subscription = scoobe.server:print_new_event_subscription',
+
+          # pick a merchant at random
+          'random_merchant = scoobe.server:print_random_merchant',
+
+          # what are your permissions on this server?
+          'my_permissions = scoobe.server:print_my_permissions',
+
+          # what are the available permissions on this server?
+          'permissions = scoobe.server:print_permissions',
+
+          # grant yourself the indicated permission on this server
+          'set_permission = scoobe.server:print_set_permission',
 
           ]})

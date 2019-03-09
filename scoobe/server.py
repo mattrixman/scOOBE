@@ -11,37 +11,66 @@ from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
 from scoobe.cli import parse, print_or_warn, Parseable, Region
 from scoobe.common import StatusPrinter, Indent
-from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth
+from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth, get_creds
 from scoobe.ssh import SshConfig, UserPass
 from scoobe.mysql import Query, Feedback
 from scoobe.properties import LocalServer
 
+# Just verbose plumbing
 class ServerObject:
     def __str__(self):
         return json.dumps(self.__dict__)
 
+    def update_with_message(self, payload, keys=None):
+        message = ""
+
+        if keys:
+            skipped = []
+            taken = []
+            for key in keys:
+                try:
+                    setattr(self, key, payload[key])
+                    taken.append(key)
+                except KeyError:
+                    skipped.append(key)
+        else:
+            self.__dict__.update(payload)
+            message = "Read items without filter: {}\n".format(', '.join(payload.keys()))
+
+        if taken:
+            message += "Read items: {}\n".format(', '.join(taken))
+        if skipped:
+            message += "Ingnored items: {}\n".format(', '.join(skipped))
+
+        if not message:
+            return None # instead of an empty string
+        else:
+            return message
+
+
 class Reseller(ServerObject):
     def __init__(self, row):
-        self.db_id = row['db_id']
-        self.id = row['id']
+        self.update_with_message(content, keys= ['db_id', 'id'])
 
     def apply_response(self, content):
-        for key in [ 'name',                'alternateName',        'owner',                     'defaultPaymentProcessor',
-                    'defaultProcessorKey',  'supportsNakedCredit',  'supportsOutboundBoarding',  'enforceMerchantPlan',
-                    'supportPhone',         'supportEmail',         'filterApps',                'forcePhone',
-                    'stationsOnClassic',    'createdTime',          'parentReseller',            'href',
-                    'isBulkPurchaser',      'isRkiIdentifier',      'isSelfBoarding',            'isIntercomEnabled',
-                    'locale' ]:
-            try:
-                setattr(self, key, content[key])
-            except KeyError:
-                pass
+        return self.update_with_message(content, keys =
+                ['name',                 'alternateName',        'owner',                     'defaultPaymentProcessor',
+                 'defaultProcessorKey',  'supportsNakedCredit',  'supportsOutboundBoarding',  'enforceMerchantPlan',
+                 'supportPhone',         'supportEmail',         'filterApps',                'forcePhone',
+                 'stationsOnClassic',    'createdTime',          'parentReseller',            'href',
+                 'isBulkPurchaser',      'isRkiIdentifier',      'isSelfBoarding',            'isIntercomEnabled',
+                 'locale' ])
 
 class Merchant(ServerObject):
     def __init__(self, row):
-        self.db_id = row['db_id']
-        self.id = row['id']
-        self.reseller_id = row['reseller_id']
+        self.update_with_message(row, keys = ['db_id', 'id', 'reseller_db_id', 'plan_db_id', 'reseller_id', 'plan_id' ])
+
+class EventSubscription(ServerObject):
+    def __init__(self, row):
+        self.update_with_message(row, keys = ['db_id', 'id'])
+
+    def apply_response(self, content):
+        return self.update_with_message(content, keys = ['processor', 'type', 'name', 'parameters' ])
 
 class PlanGroup(ServerObject):
     def __init__(self, row):
@@ -58,23 +87,15 @@ class Plan(ServerObject):
         self.merchantPlanGroup_db_id = row['merchant_plan_group_id']
 
     def apply_response(self, content):
-        for key in [ 'description', 'merchantPlanGroup', 'planCode', 'billToMid', 'defaultPlan', 'name', 'appBundle' ]:
-            try:
-                setattr(self, key, content[key])
-            except KeyError:
-                pass
-
+        return self.update_with_message(content, keys = ['description', 'merchantPlanGroup', 'planCode', 'billToMid',
+                                                         'defaultPlan', 'name',              'appBundle' ])
 class PartnerControl(ServerObject):
     def __init__(self, row):
         self.db_id = row['db_id']
         self.id = row['id']
 
     def apply_response(self, content):
-        for key in [ 'enabled', 'modifyMatch', 'criteria', 'name' ]:
-            try:
-                setattr(self, key, content[key])
-            except KeyError:
-                pass
+        return self.update_with_message(content, keys = ['enabled', 'modifyMatch', 'criteria', 'name' ])
 
 def print_cookie():
     parsed_args = parse(Parseable.target)
@@ -98,19 +119,25 @@ def get_merchant(merchant, target, printer=StatusPrinter()):
     printer("Finding merchant {}'s identifiers according to {}".format(merchant, target.get_name()))
     with Indent(printer):
         if is_uuid(merchant):
-            q = Query(target, 'metaRO', 'test321',
-                    """
-                    SELECT id as db_id, uuid as id, reseller_id
-                    FROM merchant
-                    WHERE uuid = '{}';
-                    """.format(merchant))
+            key='uuid'
         else:
-            q = Query(target, 'metaRO', 'test321',
-                    """
-                    SELECT id as db_id, uuid as id, reseller_id
-                    FROM merchant
-                    WHERE id = {};
-                    """.format(merchant))
+            key='id'
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT m.id AS db_id,
+                       m.uuid AS id,
+                       m.reseller_id AS reseller_db_id,
+                       m.merchant_plan_id AS merchant_plan_db_id,
+                       mp.uuid as plan_id,
+                       mr.uuid as reseller_id
+                FROM merchant AS m
+                JOIN merchant_plan AS mp
+                    ON m.merchant_plan_id = mp.id
+                JOIN reseller AS mr
+                    ON m.reseller_id = mr.id
+                WHERE m.{} = '{}';
+                """.format(key, merchant))
 
         merchant = q.execute(Feedback.OneRow, lambda row : Merchant(row), printer=printer)
 
@@ -241,7 +268,7 @@ def get_reseller(reseller, target, identifiers_only=False, and_channels=False, p
         if response.status_code < 200 or response.status_code > 299:
             raise Exception("GET on {} returned code {}".format(endpoint, response.status_code))
 
-        reseller.apply_response(json.loads(response.content.decode('utf-8')))
+        printer(reseller.apply_response(json.loads(response.content.decode('utf-8'))))
 
     if and_channels:
 
@@ -311,6 +338,7 @@ def set_reseller(reseller_dict, target, printer=StatusPrinter()):
                           'Cookie' : internal_auth(target, printer=printer) }
 
         data = reseller_dict
+        printer(data)
 
         response = post(endpoint, headers, data, printer=printer)
 
@@ -1099,6 +1127,8 @@ def print_new_merchant():
             reseller.channel.update(parsed_args.partnercontrolmatchcriteria)
         else:
             reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=True, printer=printer)
+
+        printer("Targeting reseller {}".format(reseller))
         uid = create_merchant(parsed_args.target, parsed_args.region, reseller, printer=printer)
         merchant = get_merchant(uid, parsed_args.target, printer=printer)
 
@@ -1221,7 +1251,8 @@ def get_plan(plan, target, printer=StatusPrinter(), identifiers_only=False):
         path='v3/merchant_plan_groups/{}/merchant_plans/{}'.format(
             plan_group.id, plan.id)
 
-        plan.apply_response(get_response_as_dict(path, target, descend_once=None, printer=printer))
+        printer(
+            plan.apply_response(get_response_as_dict(path, target, descend_once=None, printer=printer)))
 
         return plan
 
@@ -1386,8 +1417,9 @@ def get_partner_control(partner_control, target, printer=StatusPrinter(), identi
     with Indent(printer):
 
         path='v3/partner_controls/{}'.format(partner_control.id)
-        partner_control.apply_response(
-            get_response_as_dict(path, target, descend_once=None, printer=printer))
+        printer(
+                partner_control.apply_response(
+                get_response_as_dict(path, target, descend_once=None, printer=printer)))
         return partner_control
 
 def print_get_partner_control():
@@ -1564,7 +1596,277 @@ def print_get_apps():
         printer('')
         print_or_warn(json.dumps(apps), max_length=500)
 
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+def get_event_subscriptions(target, printer=StatusPrinter()):
+    printer("Getting all event subscriptions from {}".format(target.get_name()))
+    with Indent(printer):
+        return get_response_as_dict('v3/eventing/subscriptions', target, printer=printer)
+
+def print_get_event_subscriptions():
+
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        event_subscriptions = get_event_subscriptions(parsed_args.target, printer=printer)
+
+        printer('')
+        print_or_warn(json.dumps(event_subscriptions), max_length=500)
 
     except ValueError as ex:
         printer(str(ex))
         sys.exit(30)
+
+def get_event_subscription(event_subscription, target, printer=StatusPrinter(), identifiers_only=False):
+    printer("Finding event subscription {}'s identifiers according to {}".format(event_subscription, target.get_name()))
+    with Indent(printer):
+        if is_uuid(event_subscription):
+            ident='uuid'
+        else:
+            ident='id'
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id as db_id, uuid as id
+                FROM event_subscription
+                WHERE {} = '{}';
+                """.format(ident, event_subscription))
+
+        event_subscription = q.execute(Feedback.OneRow, lambda row : EventSubscription(row), printer=printer)
+
+    if identifiers_only:
+        return event_subscription
+
+
+    printer("Getting event_subscription {} from {}".format(event_subscription, target.get_name()))
+    with Indent(printer):
+
+        path='v3/eventing/subscriptions/{}'.format(event_subscription.id)
+
+        printer(event_subscription.apply_response(get_response_as_dict(path, target, descend_once=None, printer=printer)))
+
+        return event_subscription
+
+def print_get_event_subscription():
+
+    parsed_args = parse(Parseable.event_subscription, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    try:
+        event_subscription = get_event_subscription(parsed_args.eventsubscription, parsed_args.target, printer=printer)
+
+        printer('')
+        print_or_warn(str(event_subscription), max_length=500)
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+def new_event_subscription(event_subscription_dict, target, printer=StatusPrinter()):
+
+    printer("[Updating event subscription from supplied json]")
+    with Indent(printer):
+        path='v3/eventing/subscriptions'
+        return post_response_as_dict(path, target, event_subscription_dict, printer=printer);
+
+def print_new_event_subscription():
+
+    parsed_args = parse(Parseable.event_subscription_dict, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    if ('id' in parsed_args.eventsubscriptiondict) or ('db_id' in parsed_args.eventsubscriptiondict):
+        printer(textwrap.dedent(
+            """Event subscription json contains an ID--can't create one if it exists.  Maybe try set_event_subscription?
+               Otherwise, specify either 'db_id' or 'id' (uuid) in the json, like so:
+                 {
+                   "id" : "SOMEPLANUUID"
+                   "name" : "Foo PartnerControl"
+                   "description" : "I'm an event subscription",
+                 }
+            """).strip())
+        raise ValueError("Data conflicts with command")
+
+    result = new_event_subscription(parsed_args.eventsubscriptiondict, parsed_args.target, printer=printer)
+
+    print(result)
+
+def set_event_subscription(event_subscription_dict, target, printer=StatusPrinter()):
+
+    printer("[Updating event subscription from supplied json]")
+    with Indent(printer):
+        path='v3/eventing/subscriptions/{}'.format(event_subscription_dict['id'])
+        return put_response_as_dict(path, target, event_subscription_dict, printer=printer);
+
+def print_set_event_subscription():
+
+    parsed_args = parse(Parseable.event_subscription_dict, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    if 'id' in parsed_args.eventsubscriptiondict:
+        event_subscription = get_event_subscription(parsed_args.eventsubscriptiondict['id'], parsed_args.target, printer)
+    elif 'db_id' in parsed_args.eventsubscriptiondict:
+        event_subscription = get_event_subscription(parsed_args.eventsubscriptiondict['db_id'], parsed_args.target, printer)
+        parsed_args.eventsubscriptiondict['id'] = event_subscription.id
+    else:
+        printer(textwrap.dedent(
+            """It is not clear which event subscriptin you want to update, maybe try set_event_subscription?
+               Otherwise, specify either 'db_id' or 'id' (uuid) in the json, like so:
+                 {
+                   "id" : "SOMEPLANUUID"
+                   "name" : "Foo PartnerControl"
+                   "description" : "I'm an event subscription",
+                 }
+            """).strip())
+        raise ValueError("Missing Required Data")
+
+    result = set_event_subscription(parsed_args.eventsubscriptiondict, parsed_args.target, printer=printer)
+
+    print(result)
+
+def get_random_merchant(target, printer=StatusPrinter()):
+
+    printer("Picking a random active merchant from {}".format(target.get_name()))
+
+    q = Query(target, 'metaRO', 'test321',
+            """
+            SELECT
+                    md.merchant_id as db_id, m.uuid as id
+            FROM
+                    merchant_role AS mr
+                    JOIN account AS a
+                        ON mr.id = a.primary_merchant_role_id
+                    JOIN
+                        ( SELECT primary_merchant_role_id FROM account
+                        WHERE primary_merchant_role_id IS NOT NULL
+                        ORDER BY last_login desc LIMIT 100
+                         ) AS active_accounts
+                        ON mr.id = active_accounts.primary_merchant_role_id
+                    JOIN merchant_boarding as mb
+                        ON mb.merchant_id = mr.merchant_id
+                            AND account_status not in (13, 'C', 'D', '2', '02', '3', '03')
+                    LEFT JOIN merchant_device AS md
+                        ON md.merchant_id = mr.merchant_id
+                    JOIN merchant as m
+                        ON m.id = mr.merchant_id
+            WHERE md.merchant_id IS NOT NULL
+            GROUP BY 1, 2
+            ORDER BY RAND()
+            LIMIT 1;
+            """)
+
+    return q.execute(Feedback.OneRow, lambda row : Merchant(row), printer=printer)
+
+def print_random_merchant():
+
+    parsed_args = parse(Parseable.target, description="Pick a merchant at random")
+    printer = StatusPrinter(indent=0)
+
+    try:
+        merchant = get_random_merchant(parsed_args.target, printer=printer)
+        print(merchant)
+
+    except ValueError as ex:
+        printer(str(ex))
+        sys.exit(30)
+
+def get_user_permissions(ldap_user, target, printer=StatusPrinter()):
+
+    printer("Getting {}'s permissions according to {}".format(ldap_user, target.get_name()))
+    with Indent(printer):
+
+        q = Query(target, 'metaRO', 'test321',
+            """
+            SELECT ip.id AS id,
+                         label,
+                         ia.id AS account_id
+            FROM   internal_account AS ia
+                         LEFT JOIN internal_account_permission AS iap
+                                        ON ia.id = iap.internal_account_id
+                         JOIN internal_permission AS ip
+                             ON iap.internal_permission_id = ip.id
+            WHERE  ia.ldap_name = '{}'
+            ORDER  BY ip.id;
+            """.format(ldap_user))
+
+        result = q.execute(Feedback.ManyRows, printer=printer)
+        return result
+
+def print_my_permissions():
+
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Looking for creds")
+    with Indent(printer):
+        creds = get_creds(printer)
+        printer("...got 'em")
+
+    print(json.dumps(get_user_permissions(creds.user, parsed_args.target, printer=printer)))
+
+def get_permissions(target, printer=StatusPrinter()):
+
+    printer("Getting internal permissions according to {}".format(target.get_name()))
+    with Indent(printer):
+
+        q = Query(target, 'metaRO', 'test321', "SELECT * from internal_permission;")
+        result = q.execute(Feedback.ManyRows, printer=printer)
+        return result
+
+def print_permissions():
+
+    parsed_args = parse(Parseable.target)
+    printer = StatusPrinter(indent=0)
+    print(json.dumps(get_permissions(parsed_args.target, printer=printer)))
+
+def set_permission(ldap_user, permission, target, printer=StatusPrinter()):
+
+    printer("Getting user {}'s id according to {}".format(permission, target.get_name()))
+    with Indent(printer):
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id FROM internal_account WHERE ldap_name = '{}';
+                """.format(ldap_user))
+
+        user_id = q.execute(Feedback.OneRow, printer=printer)['id']
+
+    printer("Getting permission {}'s identifiers to {}".format(permission, target.get_name()))
+    with Indent(printer):
+        try:
+            int(permission)
+            key = 'id'
+        except ValueError:
+            key = 'name'
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id, name FROM internal_permission WHERE {} = {};
+                """.format(key, permission))
+
+        permission = q.execute(Feedback.OneRow, printer=printer)
+
+    printer("Granting internal permission {} to {} according to {}".format(permission['name'], ldap_user, target.get_name()))
+    with Indent(printer):
+
+        q = Query(target, 'metaRW', 'test789',
+                """
+                INSERT IGNORE INTO internal_account_permission (internal_account_id, internal_permission_id)
+                VALUES ({}, {});
+                """.format(user_id, permission['id']))
+        result = q.execute(Feedback.ChangeCount, printer=printer)
+        return result
+
+def print_set_permission():
+
+    parsed_args = parse(Parseable.internal_permission, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    printer("Looking for creds")
+    with Indent(printer):
+        creds = get_creds(printer)
+        printer("...got 'em")
+
+    print(json.dumps(set_permission(creds.user, parsed_args.internalpermission, parsed_args.target, printer=printer)))

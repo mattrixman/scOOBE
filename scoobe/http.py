@@ -88,7 +88,7 @@ def post(endpoint, headers, data, obfuscate_pass=False, printer=StatusPrinter())
     else:
         return _do_request(Verb.post, endpoint, headers, data, printer=printer)
 
-# Syntactic Sweeter:
+# Server Specific:
 
 def get_creds(printer=StatusPrinter()):
 

@@ -148,6 +148,7 @@ class Reseller(_IParseable):
         return value
 
 class Merchant(_IParseable):
+
     def preparse(self, parser):
         parser.add_argument(field_name(self), type=str, help="the id or the uuid of the merchant")
 
@@ -156,7 +157,27 @@ class Merchant(_IParseable):
         throw_if_not_id_or_uuid(value)
         return value
 
+class EventSubscription(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the id or the uuid of the event subscription")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        throw_if_not_id_or_uuid(value)
+        return value
+
+class InternalPermission(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the db_id or name of the permission")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
 class PlanGroup(_IParseable):
+
     def preparse(self, parser):
         parser.add_argument(field_name(self), type=str, help="the id or the uuid of the plan_group")
 
@@ -166,6 +187,7 @@ class PlanGroup(_IParseable):
         return value
 
 class Plan(_IParseable):
+
     def preparse(self, parser):
         parser.add_argument(field_name(self), type=str, help="the id or the uuid of the plan")
 
@@ -175,6 +197,7 @@ class Plan(_IParseable):
         return value
 
 class PartnerControl(_IParseable):
+
     def preparse(self, parser):
         parser.add_argument(field_name(self), type=str, help="the id or the uuid of the partner control")
 
@@ -204,6 +227,7 @@ class CloudTarget(Enum):
         return self.value
 
 class CountryCode(Enum):
+
     us = 'US'
     eu = 'EU'
 
@@ -322,6 +346,21 @@ class ResellerDict(_IParseable):
         parsed = json.loads(value.read())
         return parsed
 
+class EventSubscriptionDict(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument('-s', '--'+field_name(self), default=sys.stdin, type= FileType('r'), nargs='?',
+                            help=textwrap.dedent(
+                                """
+                                A file containing JSON which definines the event subscription
+                                If not specified, will try to read from stdin.
+                                 """))
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        parsed = json.loads(value.read())
+        return parsed
+
 class PartnerControlMatchCriteria(_IParseable):
 
     def preparse(self, parser):
@@ -351,11 +390,13 @@ class PartnerControlMatchCriteria(_IParseable):
         return parsed
 
 class Parseable(Enum):
+
     serial = Serial
     target = Target
     code = Code
     cpuid = Cpuid
     merchant = Merchant
+    event_subscription = EventSubscription
     plan_group = PlanGroup
     plan = Plan
     partner_control = PartnerControl
@@ -371,6 +412,8 @@ class Parseable(Enum):
     name = Name
     partner_control_match_criteria = PartnerControlMatchCriteria
     showall = All
+    event_subscription_dict = EventSubscriptionDict
+    internal_permission = InternalPermission
 
 # given a list of parsables, return a namedtuple containing their results
 def parse(*parsables, description=None):
