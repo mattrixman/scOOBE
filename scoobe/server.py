@@ -6,12 +6,16 @@ import textwrap
 import datetime
 import xmltodict
 import time
+import random
+import string
+import uuid
 import pprint as pp
+import urllib
 from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
 from scoobe.cli import parse, print_or_warn, Parseable, Region
 from scoobe.common import StatusPrinter, Indent
-from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth, get_creds
+from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth, get_creds, uri as makeuri
 from scoobe.ssh import SshConfig, UserPass
 from scoobe.mysql import Query, Feedback
 from scoobe.properties import LocalServer
@@ -50,7 +54,7 @@ class ServerObject:
 
 class Reseller(ServerObject):
     def __init__(self, row):
-        self.update_with_message(content, keys= ['db_id', 'id'])
+        self.update_with_message(row, keys= ['db_id', 'id'])
 
     def apply_response(self, content):
         return self.update_with_message(content, keys =
@@ -1870,3 +1874,125 @@ def print_set_permission():
         printer("...got 'em")
 
     print(json.dumps(set_permission(creds.user, parsed_args.internalpermission, parsed_args.target, printer=printer)))
+
+def new_clover_uuid():
+    return ''.join((random.choice(string.ascii_uppercase + string.digits) for _ in range(13)))
+
+def get_clover_reseller_id(target, printer=StatusPrinter()):
+    printer("Find the clover reseller")
+    with Indent(printer):
+        # find the clover reseller
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id FROM reseller WHERE name = 'clover';
+                """)
+        return q.execute(Feedback.OneRow, printer=printer)['id']
+
+def get_super_admin_permissions_id(target, clover_reseller_id, printer=StatusPrinter()):
+
+    printer("Get the list of permissions")
+    with Indent(printer):
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT * FROM reseller_permissions LIMIT 1
+                """)
+        result = q.execute(Feedback.OneRow, printer=printer)
+
+        permissions_set = set(result.keys()) - set(['id', 'uuid', 'reseller_id', 'type', 'is_default', 'name'])
+        permissions = ', '.join(permissions_set)
+        ones = len(permissions_set) * '1'
+
+    def get_id():
+        printer("Which row has all permissions enabled?")
+        with Indent(printer):
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id FROM reseller_permissions WHERE CONCAT({}) = {};"
+                    """.format(permissions, ones))
+            result = q.execute(Feedback.ManyRows, printer=printer)
+
+            print(result)
+            if result:
+                return result[0]['id']
+            else:
+                return None
+
+    permission_id = get_id()
+
+    # if it exists, return it
+    if permission_id:
+        return permission_id
+
+    # otherwise, create it
+    else:
+        printer("Create the super-admin permission entry")
+        with Indent(printer):
+            permission_uuid = new_clover_uuid()
+            all_on = ','.join(ones)
+
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    INSERT INTO reseller_permissions (uuid, reseller_id, type, is_default, name, {permissions})
+                    VALUES ('{permission_uuid}', {clover_reseller_id}, 'Super', 1, 'Super Administrator', {all_on})
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
+        return get_id()
+
+def new_cs_user(name, email, target, printer=StatusPrinter()):
+    printer("Creating a new cs user on {}".format(target.get_name()))
+    with Indent(printer):
+
+        printer("Gathering cs user prerequisites")
+        with Indent(printer):
+            target_name = target.get_name()
+            clover_reseller_id = get_clover_reseller_id(target, printer=printer)
+            super_user_permission_id = get_super_admin_permissions_id(target, clover_reseller_id, printer=printer)
+            role_uuid = new_clover_uuid()
+            account_uuid = new_clover_uuid()
+            claim_code = uuid.uuid4()
+            timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+        printer(("Creating account {account_uuid} for {name} ({email}) "
+                + "with permission {super_user_permission_id} "
+                + "and reseller_role {role_uuid}").format(**vars()))
+        with Indent(printer):
+
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    SET FOREIGN_KEY_CHECKS = 0;
+                    INSERT INTO account(`uuid`, `name`, `password_hash`, `email`, `primary_reseller_role_id`, `claim_code`, `password_updated_time`)
+                    VALUES ('{account_uuid}', '{name}', 'to-be-overwritten', '{email}', '{clover_reseller_id}', '{claim_code}', '{timestamp}')
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id FROM account WHERE uuid = '{account_uuid}'
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.OneRow, printer=printer)
+            account_id = result['id']
+
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    INSERT INTO reseller_role(account_id, reseller_id, permissions_id)
+                    VALUES ('{account_id}', {clover_reseller_id}, {super_user_permission_id})
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
+        path = 'claim?' + urllib.parse.urlencode( { 'email'     : email,
+                                                    'claimCode' : claim_code })
+        claim_uri = makeuri(path, target)
+
+        return { 'claim_uri' : claim_uri }
+
+def print_new_cs_user():
+    parsed_args = parse(Parseable.name, Parseable.email_address, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    claim_uri = new_cs_user(parsed_args.name, parsed_args.emailaddress, parsed_args.target, printer=printer)
+    print(json.dumps(claim_uri))

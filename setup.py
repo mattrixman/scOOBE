@@ -176,4 +176,7 @@ setup(name='scoobe',
           # grant yourself the indicated permission on this server
           'set_permission = scoobe.server:print_set_permission',
 
+          # create a new cs user so you can log into the cs dashboard
+          'new_cs_user = scoobe.server:print_new_cs_user',
+
           ]})

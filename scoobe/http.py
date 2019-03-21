@@ -167,7 +167,7 @@ def internal_auth(target,
             else:
                 raise Exception("Unexpected response from login endpoint")
 
-def _uri(path, target):
+def uri(path, target):
 
     return'{}://{}:{}/{}'.format(
         target.get_hypertext_protocol(),
@@ -193,7 +193,7 @@ def _finish(response, verb_str, uri, descend_once, printer=StatusPrinter()):
 
 def get_response_as_dict(path, target, descend_once='elements', printer=StatusPrinter()):
 
-    uri = _uri(path, target)
+    uri = uri(path, target)
     headers = _headers(target, printer=printer)
     response = get(uri, headers, printer=printer)
 
@@ -201,14 +201,14 @@ def get_response_as_dict(path, target, descend_once='elements', printer=StatusPr
 
 def put_response_as_dict(path, target, data, descend_once=None, printer=StatusPrinter()):
 
-    uri = _uri(path, target)
+    uri = uri(path, target)
     headers = _headers(target, printer=printer)
     response = put(uri, headers, data, printer=printer)
     return _finish(response, 'PUT', uri, descend_once)
 
 def post_response_as_dict(path, target, data, descend_once=None, printer=StatusPrinter()):
 
-    uri = _uri(path, target)
+    uri = uri(path, target)
     headers = _headers(target, printer=printer)
     response = post(uri, headers, data, printer=printer)
 

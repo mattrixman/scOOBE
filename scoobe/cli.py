@@ -389,6 +389,16 @@ class PartnerControlMatchCriteria(_IParseable):
             return
         return parsed
 
+class EmailAddress(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="the e-mail address for new user")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
+
 class Parseable(Enum):
 
     serial = Serial
@@ -410,6 +420,7 @@ class Parseable(Enum):
     reseller_dict=ResellerDict
     partner_control_dict=PartnerControlDict
     name = Name
+    email_address = EmailAddress
     partner_control_match_criteria = PartnerControlMatchCriteria
     showall = All
     event_subscription_dict = EventSubscriptionDict
