@@ -15,7 +15,7 @@ from collections import namedtuple, OrderedDict
 import xml.etree.ElementTree as ET
 from scoobe.cli import parse, print_or_warn, Parseable, Region
 from scoobe.common import StatusPrinter, Indent
-from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth, get_creds, uri as makeuri
+from scoobe.http import get, put, post, get_response_as_dict, put_response_as_dict, post_response_as_dict, Verb, internal_auth, get_creds, make_uri
 from scoobe.ssh import SshConfig, UserPass
 from scoobe.mysql import Query, Feedback
 from scoobe.properties import LocalServer
@@ -1911,7 +1911,7 @@ def get_super_admin_permissions_id(target, clover_reseller_id, printer=StatusPri
                     """.format(permissions, ones))
             result = q.execute(Feedback.ManyRows, printer=printer)
 
-            print(result)
+            printer(result)
             if result:
                 return result[0]['id']
             else:
@@ -1959,23 +1959,27 @@ def new_cs_user(name, email, target, printer=StatusPrinter()):
                 + "and reseller_role {role_uuid}").format(**vars()))
         with Indent(printer):
 
+            printer("Adding to the account table")
             q = Query(target, 'metaRW', 'test789',
                     """
-                    SET FOREIGN_KEY_CHECKS = 0;
-                    INSERT INTO account(`uuid`, `name`, `password_hash`, `email`, `primary_reseller_role_id`, `claim_code`, `password_updated_time`)
-                    VALUES ('{account_uuid}', '{name}', 'to-be-overwritten', '{email}', '{clover_reseller_id}', '{claim_code}', '{timestamp}')
+                    INSERT INTO account(uuid, name, email, claim_code)
+                    VALUES ('{account_uuid}', '{name}', '{email}', '{claim_code}')
                     ;
                     """.format(**vars()))
             result = q.execute(Feedback.ChangeCount, printer=printer)
 
+            printer("Getting new accountid")
             q = Query(target, 'metaRO', 'test321',
                     """
                     SELECT id FROM account WHERE uuid = '{account_uuid}'
                     ;
                     """.format(**vars()))
             result = q.execute(Feedback.OneRow, printer=printer)
+            if result is None:
+                raise Exception("Failed to add a row to `account` (is that e-mail address already in use?)")
             account_id = result['id']
 
+            printer("Adding new reseller role")
             q = Query(target, 'metaRW', 'test789',
                     """
                     INSERT INTO reseller_role(account_id, reseller_id, permissions_id)
@@ -1984,9 +1988,31 @@ def new_cs_user(name, email, target, printer=StatusPrinter()):
                     """.format(**vars()))
             result = q.execute(Feedback.ChangeCount, printer=printer)
 
+            printer("Getting new role id")
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id
+                    FROM reseller_role
+                    WHERE account_id = {account_id}
+                        AND reseller_id = {clover_reseller_id}
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.OneRow, printer=printer)
+            reseller_role_id = result['id']
+
+            printer("Updating account with new role")
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    UPDATE account
+                    SET primary_reseller_role_id = {reseller_role_id}
+                    WHERE id = {account_id}
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
         path = 'claim?' + urllib.parse.urlencode( { 'email'     : email,
-                                                    'claimCode' : claim_code })
-        claim_uri = makeuri(path, target)
+                                                    'claimCode' : claim_code } )
+        claim_uri = make_uri(path, target)
 
         return { 'claim_uri' : claim_uri }
 

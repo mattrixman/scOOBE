@@ -2,6 +2,7 @@ import requests
 import json
 import pprint as pp
 import os
+import sys
 from copy import deepcopy
 from enum import Enum
 from scoobe.common import StatusPrinter, Indent, shorten, pretty_shorten, is_identity
@@ -167,7 +168,7 @@ def internal_auth(target,
             else:
                 raise Exception("Unexpected response from login endpoint")
 
-def uri(path, target):
+def make_uri(path, target):
 
     return'{}://{}:{}/{}'.format(
         target.get_hypertext_protocol(),
@@ -182,10 +183,10 @@ def _headers(target, printer=StatusPrinter()):
                'Connection' : 'keep-alive',
                    'Cookie' : internal_auth(target, printer=printer) }
 
-def _finish(response, verb_str, the_uri, descend_once, printer=StatusPrinter()):
+def _finish(response, verb_str, uri, descend_once, printer=StatusPrinter()):
 
     if response.status_code < 200 or response.status_code > 299:
-        raise Exception("{} on {} returned code {}".format(verb_str, the_uri, response.status_code))
+        raise Exception("{} on {} returned code {}".format(verb_str, uri, response.status_code))
 
     if descend_once:
         return json.loads(response.content.decode('utf-8'))[descend_once]
@@ -193,23 +194,23 @@ def _finish(response, verb_str, the_uri, descend_once, printer=StatusPrinter()):
 
 def get_response_as_dict(path, target, descend_once='elements', printer=StatusPrinter()):
 
-    the_uri = uri(path, target)
+    uri = make_uri(path, target)
     headers = _headers(target, printer=printer)
-    response = get(the_uri, headers, printer=printer)
+    response = get(uri, headers, printer=printer)
 
-    return _finish(response, 'GET', the_uri, descend_once)
+    return _finish(response, 'GET', uri, descend_once)
 
 def put_response_as_dict(path, target, data, descend_once=None, printer=StatusPrinter()):
 
-    the_uri = uri(path, target)
+    uri = make_uri(path, target)
     headers = _headers(target, printer=printer)
-    response = put(the_uri, headers, data, printer=printer)
-    return _finish(response, 'PUT', the_uri, descend_once)
+    response = put(uri, headers, data, printer=printer)
+    return _finish(response, 'PUT', uri, descend_once)
 
 def post_response_as_dict(path, target, data, descend_once=None, printer=StatusPrinter()):
 
-    the_uri = uri(path, target)
+    uri = make_uri(path, target)
     headers = _headers(target, printer=printer)
-    response = post(the_uri, headers, data, printer=printer)
+    response = post(uri, headers, data, printer=printer)
 
-    return _finish(response, 'POST', the_uri, descend_once)
+    return _finish(response, 'POST', uri, descend_once)
