@@ -106,6 +106,15 @@ class Name(_IParseable):
         value = getattr(parser, field_name(self))
         return value
 
+class LdapName(_IParseable):
+
+    def preparse(self, parser):
+        parser.add_argument(field_name(self), type=str, help="The LDAP name for this user")
+
+    def get_val(self, parser):
+        value = getattr(parser, field_name(self))
+        return value
+
 class TrialDays(_IParseable):
 
     def preparse(self, parser):
@@ -420,6 +429,7 @@ class Parseable(Enum):
     reseller_dict=ResellerDict
     partner_control_dict=PartnerControlDict
     name = Name
+    ldap_name = LdapName
     email_address = EmailAddress
     partner_control_match_criteria = PartnerControlMatchCriteria
     showall = All

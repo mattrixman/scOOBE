@@ -179,4 +179,11 @@ setup(name='scoobe',
           # create a new cs user so you can log into the cs dashboard
           'new_cs_user = scoobe.server:print_new_cs_user',
 
+          # create a new ldap user
+          # (local envs only)
+          'new_ldap_user = scoobe.server:print_new_ldap_user',
+
+          # apply a hardcoded channel to this reseller so new merchants can be created there
+          'make_reseller_channel = scoobe.server:print_make_reseller_channel',
+
           ]})

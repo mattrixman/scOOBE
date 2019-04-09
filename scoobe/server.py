@@ -232,7 +232,7 @@ def print_resellers():
     printer('')
     print_or_warn(output, max_length=500)
 
-def get_reseller(reseller, target, identifiers_only=False, and_channels=False, printer=StatusPrinter()):
+def get_reseller(reseller, target, identifiers_only=False, boarding_channels=False, printer=StatusPrinter()):
     printer("Finding reseller {}'s identifiers according to {}".format(reseller, target.get_name()))
     with Indent(printer):
         if is_uuid(reseller):
@@ -274,7 +274,7 @@ def get_reseller(reseller, target, identifiers_only=False, and_channels=False, p
 
         printer(reseller.apply_response(json.loads(response.content.decode('utf-8'))))
 
-    if and_channels:
+    if boarding_channels:
 
         def mark(prop, val):
 
@@ -319,7 +319,7 @@ def print_get_reseller():
     parsed_args = parse(Parseable.reseller, Parseable.target)
     printer = StatusPrinter(indent=0)
 
-    reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=True, printer=printer)
+    reseller = get_reseller(parsed_args.reseller, parsed_args.target, boarding_channels=True, printer=printer)
 
     print_or_warn(str(reseller), max_length=500)
 
@@ -1126,11 +1126,11 @@ def print_new_merchant():
     printer("Creating New Merchant")
     with Indent(printer):
         if parsed_args.partnercontrolmatchcriteria:
-            reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=False, printer=printer)
+            reseller = get_reseller(parsed_args.reseller, parsed_args.target, boarding_channels=False, printer=printer)
             reseller.channel = {}
             reseller.channel.update(parsed_args.partnercontrolmatchcriteria)
         else:
-            reseller = get_reseller(parsed_args.reseller, parsed_args.target, and_channels=True, printer=printer)
+            reseller = get_reseller(parsed_args.reseller, parsed_args.target, boarding_channels=True, printer=printer)
 
         printer("Targeting reseller {}".format(reseller))
         uid = create_merchant(parsed_args.target, parsed_args.region, reseller, printer=printer)
@@ -1840,9 +1840,10 @@ def set_permission(ldap_user, permission, target, printer=StatusPrinter()):
     printer("Getting permission {}'s identifiers to {}".format(permission, target.get_name()))
     with Indent(printer):
         try:
-            int(permission)
+            permission = int(permission)
             key = 'id'
         except ValueError:
+            permission = '"{}"'.format(permission)
             key = 'name'
 
         q = Query(target, 'metaRO', 'test321',
@@ -1952,7 +1953,6 @@ def new_cs_user(name, email, target, printer=StatusPrinter()):
             role_uuid = new_clover_uuid()
             account_uuid = new_clover_uuid()
             claim_code = uuid.uuid4()
-            timestamp = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
 
         printer(("Creating account {account_uuid} for {name} ({email}) "
                 + "with permission {super_user_permission_id} "
@@ -2022,3 +2022,129 @@ def print_new_cs_user():
 
     claim_uri = new_cs_user(parsed_args.name, parsed_args.emailaddress, parsed_args.target, printer=printer)
     print(json.dumps(claim_uri))
+
+def get_internal_group_id(target, group_name, printer=StatusPrinter()):
+
+    printer("Get the internal groups")
+    with Indent(printer):
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT * FROM internal_group LIMIT 1
+                """)
+        result = q.execute(Feedback.ManyRows, printer=printer)
+
+    ids_by_name = { x['name'] : x['id'] for x in result }
+
+    if group_name in ids_by_name:
+        printer("Found " + group_name)
+
+    return ids_by_name[group_name];
+
+def get_internal_permission_ids(target, permission_names, printer=StatusPrinter()):
+
+    printer("Get the internal permission id's")
+    with Indent(printer):
+
+        names = "(\"" + "\",\"".join(permission_names) + "\")"
+
+        q = Query(target, 'metaRO', 'test321',
+                """
+                SELECT id FROM internal_permission where name in {};
+                """.format(names))
+        result = q.execute(Feedback.ManyRows, printer=printer)
+
+    return [ x['id'] for x in result ]
+
+def new_internal_user(ldap_name, target, printer=StatusPrinter()):
+    printer("Creating a new internal user on {}".format(target.get_name()))
+    with Indent(printer):
+
+        printer("Gathering user prerequisites")
+        with Indent(printer):
+            target_name = target.get_name()
+            account_uuid = new_clover_uuid()
+
+            internal_group_id = get_internal_group_id(target, "admin-RO", printer=printer)
+
+            permission_names = [ "READ_ACCOUNT", "READ_APP", "READ_DEVELOPER", "READ_DEVICE", "READ_DEVICE_BUNDLE",
+                                 "READ_EVENTING_CONFIG", "READ_EVENTS", "READ_INTERNAL_ACCOUNT", "READ_MERCHANT",
+                                 "READ_MERCHANT_BOARDING", "READ_PARTNER_CONTROL", "READ_ROM", "WRITE_DEVELOPER",
+                                 "WRITE_MERCHANT" ]
+            permission_ids = get_internal_permission_ids(target, permission_names, printer=printer)
+
+        printer("Creating internal account {account_uuid} for {ldap_name}".format(**vars()))
+        with Indent(printer):
+
+            printer("Adding to the internal_account table")
+            q = Query(target, 'metaRW', 'test789',
+                    """
+                    INSERT INTO internal_account(internal_group_id, uuid, ldap_name)
+                    VALUES ('{internal_group_id}', '{account_uuid}', '{ldap_name}')
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
+            printer("Getting new internal_account id")
+            q = Query(target, 'metaRO', 'test321',
+                    """
+                    SELECT id FROM internal_account WHERE uuid = '{account_uuid}'
+                    ;
+                    """.format(**vars()))
+            result = q.execute(Feedback.OneRow, printer=printer)
+            if result is None:
+                raise Exception("Failed to add a row to `internal_account` (is that ldap_name already in use?)")
+            internal_account_id = result['id']
+
+
+            printer("Adding user permissions")
+
+            sql = "INSERT INTO internal_account_permission(internal_account_id, internal_permission_id)\nVALUES "
+            for perm_id in permission_ids:
+                sql += "({}, {}),\n".format(internal_account_id, perm_id)
+            sql = sql[:-2] # trailing comma
+            sql += ";"
+
+            q = Query(target, 'metaRW', 'test789', sql)
+            result = q.execute(Feedback.ChangeCount, printer=printer)
+
+            return { 'id' : account_uuid, 'db_id' : internal_account_id }
+
+def print_new_ldap_user():
+    parsed_args = parse(Parseable.reseller, Parseable.target)
+    printer = StatusPrinter(indent=0)
+
+    user_ids = new_internal_user(parsed_args.reseller, parsed_args.target, printer=printer)
+    print(json.dumps(user_ids))
+
+def make_reseller_channel(reseller, channel, target, printer=StatusPrinter()):
+    printer("Making a channel for reseller {} : {} on {}".format(reseller, channel, target.get_name()))
+    with Indent(printer):
+
+        path='v3/resellers/' + reseller.id + '/reseller_channels'
+
+        data = { "chainAgent"     : None,
+                 "chainBank"      : None,
+                 "channel"        : None,
+                 "marker"         : None,
+                 "sysprin"        : None,
+                 "sysprinPartial" : False }
+
+        data.update(channel)
+
+        print(path, target, data)
+        return post_response_as_dict(path, target, data, printer=printer)
+
+def print_make_reseller_channel():
+    parsed_args = parse(Parseable.reseller, Parseable.target, description=
+                        "Currently, this snac just adds a hardcoded channel (BankMarker = 999)")
+                        # TODO: expand this
+
+    printer = StatusPrinter(indent=0)
+
+    reseller = get_reseller(parsed_args.reseller, parsed_args.target, identifiers_only=True, printer=printer)
+
+    channel_details = make_reseller_channel(reseller,
+                                            {"channel":"scOOBE_channel", "marker":999},
+                                            parsed_args.target,
+                                            printer=printer)
+    print(json.dumps(channel_details))
