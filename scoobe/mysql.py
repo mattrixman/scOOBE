@@ -1,5 +1,4 @@
-import MySQLdb
-import MySQLdb.cursors
+import pymysql
 import pprint as pp
 from enum import Enum
 from textwrap import dedent
@@ -113,14 +112,13 @@ class Query:
                 host = Query.get_mysql_host(tun.mysql().host)
 
                 # open a mysql connection
-                db = MySQLdb.connect(user=self.mysql_user,
+                db = pymysql.connect(user=self.mysql_user,
                                     host=host,
                                     port=tun.mysql().port,
                                     db=tun.mysql().db,
                                     passwd=self.mysql_pass,
-                                    autocommit=True,
-                                    cursorclass=MySQLdb.cursors.DictCursor)
-                c = db.cursor()
+                                    autocommit=True)
+                c = db.cursor(pymysql.cursors.DictCursor)
 
                 # show the query then run it
                 printer("[Query]")

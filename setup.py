@@ -7,7 +7,7 @@ setup(name='scoobe',
       author_email='matt.rixman@clover.com',
       packages=['scoobe'],
       python_requires= '>=3',
-      install_requires=['uiautomator', 'sh', 'mysqlclient', 'sshconf', 'requests', 'ifaddr', 'sortedcontainers', 'xmltodict'],
+      install_requires=['uiautomator', 'sh', 'pymysql', 'sshconf', 'requests', 'ifaddr', 'sortedcontainers', 'xmltodict'],
       entry_points={'console_scripts' : [
           # press the button with the given text
           'press_button = scoobe.ui:press',
